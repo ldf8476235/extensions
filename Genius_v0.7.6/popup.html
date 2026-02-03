@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Genius Swap Helper</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <!-- 主页面 -->
+    <div class="panel" id="mainPanel">
+      <div class="header">
+        <div>
+          <div class="title">Genius Swap</div>
+        </div>
+        <div class="status" id="statusText">Disabled</div>
+      </div>
+      <div class="row">
+        <div>
+          <div class="label">Enable auto swap</div>
+          <div class="hint">Only runs on /zh/trade</div>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="enabledToggle" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="row count-row">
+        <div class="label">Operation count</div>
+        <div class="count" id="countValue">0</div>
+      </div>
+      <div class="row btn-row">
+        <button class="btn btn-secondary" id="configAggregatorBtn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          聚合器设置
+        </button>
+      </div>
+      <div class="hint-text" id="hintText"></div>
+    </div>
+
+    <!-- 聚合器设置页面 -->
+    <div class="panel hidden" id="aggregatorPanel">
+      <div class="header">
+        <button class="back-btn" id="backBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        <div class="title">聚合器设置</div>
+        <div style="width: 24px;"></div>
+      </div>
+      <div class="aggregator-section">
+        <div class="section-title">EVM</div>
+        <div class="aggregator-list" id="evmAggregatorList"></div>
+      </div>
+      <div class="aggregator-section">
+        <div class="section-title">Solana</div>
+        <div class="aggregator-list" id="solanaAggregatorList"></div>
+      </div>
+      <div class="row btn-row">
+        <button class="btn" id="applyAggregatorBtn">应用设置</button>
+      </div>
+      <div class="hint-text" id="aggregatorHintText"></div>
+    </div>
+
+    <script src="popup.js"></script>
+  </body>
+</html>

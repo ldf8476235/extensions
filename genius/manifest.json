@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Genius Swap Helper",
+  "version": "0.1.0",
+  "description": "Auto-select BNB48 token on the TradeGenius swap page.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.tradegenius.com/zh/trade*"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Genius Swap Helper",
+    "default_popup": "popup.html"
+  }
+}

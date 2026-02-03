@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "Opinion Cleaner",
+  "version": "0.1.0",
+  "description": "Hide marquee containers when URL contains opinion.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

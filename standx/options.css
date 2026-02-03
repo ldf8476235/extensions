@@ -1,0 +1,116 @@
+:root {
+  color-scheme: light;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", "Sora", "IBM Plex Sans", "Noto Sans", sans-serif;
+  background: linear-gradient(120deg, #f7f9fc, #eef1f6);
+  color: #111827;
+}
+
+.wrap {
+  max-width: 520px;
+  margin: 48px auto;
+  padding: 28px;
+  background: white;
+  border-radius: 18px;
+  box-shadow: 0 20px 40px rgba(15, 23, 42, 0.12);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+}
+
+h1 {
+  margin: 0 0 8px;
+  font-size: 24px;
+}
+
+p {
+  margin: 0 0 18px;
+  color: #4b5563;
+  font-size: 14px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  color: #374151;
+  margin-bottom: 8px;
+}
+
+.field {
+  margin-bottom: 16px;
+}
+
+textarea {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  font-size: 13px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  box-sizing: border-box;
+  resize: vertical;
+  background: #f9fafb;
+}
+
+input[type="text"],
+input[type="password"] {
+  width: 100%;
+  border-radius: 12px;
+  border: 1px solid #e5e7eb;
+  padding: 12px;
+  font-size: 13px;
+  font-family: inherit;
+  box-sizing: border-box;
+  background: #f9fafb;
+}
+
+input[type="password"] {
+  -webkit-text-security: disc;
+}
+
+textarea:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+input[type="text"]:focus,
+input[type="password"]:focus {
+  outline: none;
+  border-color: #10b981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+button {
+  appearance: none;
+  border: none;
+  background: linear-gradient(135deg, #10b981, #22c55e);
+  color: #0b1b14;
+  font-weight: 700;
+  padding: 10px 16px;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+#status {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+#status.success {
+  color: #047857;
+}
+
+.hint {
+  margin-top: 12px;
+  font-size: 12px;
+  color: #6b7280;
+}

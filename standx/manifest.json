@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "StandX Positions Panel",
+  "version": "0.1.0",
+  "description": "Floating panel for StandX positions and quick order entry.",
+  "permissions": ["storage", "webRequest"],
+  "host_permissions": [
+    "https://api.standx.com/*",
+    "https://perps.standx.com/*",
+    "https://omni.variational.io/*",
+    "ws://198.46.175.142:8888/*",
+    "https://api.day.app/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "options_page": "options.html",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "StandX Panel"
+  }
+}

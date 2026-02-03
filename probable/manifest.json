@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "Probable Auto Volume",
+  "version": "0.1.0",
+  "description": "Floating panel for Probable auto volume actions.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}
