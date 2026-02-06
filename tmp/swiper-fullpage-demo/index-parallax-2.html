@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Swiper React Parallax v2</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Ibarra+Real+Nova:wght@400;600;700&family=Spline+Sans:wght@300;400;500&display=swap" />
+    <style>
+      :root {
+        --ink: #0a0d12;
+        --fog: #e9e5da;
+        --acid: #d8ff45;
+        --steel: #7c8796;
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body, #root { height: 100%; margin: 0; }
+      body {
+        background: var(--ink);
+        color: var(--fog);
+        font-family: "Spline Sans", sans-serif;
+        overflow: hidden;
+      }
+
+      .app { height: 100%; }
+      .swiper { height: 100%; }
+
+      .slide {
+        min-height: 100vh;
+        display: grid;
+        align-content: center;
+        padding: 12vh 10vw;
+        position: relative;
+        isolation: isolate;
+        --p: 0;
+        --ap: 0;
+      }
+
+      .slide::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, #ffffff0d 1px, transparent 1px),
+                    linear-gradient(180deg, #ffffff08 1px, transparent 1px);
+        background-size: 60px 60px, 60px 60px;
+        opacity: 0.25;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .orb {
+        position: absolute;
+        width: 48vw;
+        height: 48vw;
+        max-width: 520px;
+        max-height: 520px;
+        border-radius: 50%;
+        filter: blur(6px);
+        opacity: 0.55;
+        transform: translate3d(calc(var(--p) * 120px), calc(var(--p) * -80px), 0) scale(calc(1 - (var(--ap) * 0.15)));
+        transition: transform 0.05s linear;
+        z-index: 0;
+      }
+
+      .orb.o1 { background: radial-gradient(circle at 30% 30%, #283447 0%, transparent 60%); top: -10%; left: -5%; }
+      .orb.o2 { background: radial-gradient(circle at 70% 40%, #1f2a35 0%, transparent 60%); bottom: -5%; right: -10%; }
+
+      .content {
+        position: relative;
+        z-index: 2;
+        max-width: 920px;
+        border-left: 2px solid var(--acid);
+        padding-left: 24px;
+        transform: translate3d(0, calc(var(--p) * 24px), 0);
+      }
+
+      .kicker {
+        font-size: 12px;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: var(--steel);
+        margin-bottom: 12px;
+        transform: translate3d(0, calc(var(--p) * 18px), 0);
+      }
+
+      h1 {
+        font-family: "Ibarra Real Nova", serif;
+        font-weight: 700;
+        font-size: clamp(40px, 8.5vw, 104px);
+        line-height: 0.95;
+        margin: 0 0 18px 0;
+        letter-spacing: 0.02em;
+        transform: translate3d(0, calc(var(--p) * 42px), 0);
+      }
+
+      p {
+        font-size: 18px;
+        line-height: 1.65;
+        margin: 0;
+        color: #d7d1c4;
+        max-width: 54ch;
+        transform: translate3d(0, calc(var(--p) * 24px), 0);
+      }
+
+      .meta {
+        margin-top: 18px;
+        display: inline-flex;
+        gap: 12px;
+        font-size: 12px;
+        color: #b5becc;
+        transform: translate3d(0, calc(var(--p) * 12px), 0);
+      }
+
+      .meta span {
+        border: 1px solid #ffffff22;
+        padding: 6px 10px;
+        border-radius: 999px;
+      }
+
+      .s1 { background: linear-gradient(120deg, #0b0e13, #1d232b); }
+      .s2 { background: linear-gradient(120deg, #12181e, #252b32); }
+      .s3 { background: linear-gradient(120deg, #0e1318, #1c2229); }
+
+      .frame {
+        position: fixed;
+        top: 22px;
+        left: 28px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        z-index: 10;
+        font-size: 12px;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+        color: #aeb7c3;
+      }
+
+      .frame::before {
+        content: "";
+        width: 26px;
+        height: 2px;
+        background: var(--acid);
+        display: inline-block;
+      }
+
+      .hint {
+        position: fixed;
+        left: 50%;
+        bottom: 18px;
+        transform: translateX(-50%);
+        font-size: 12px;
+        letter-spacing: 0.25em;
+        text-transform: uppercase;
+        color: #8c96a4;
+        z-index: 10;
+      }
+
+      .swiper-pagination {
+        right: 24px !important;
+        width: 4px;
+        height: 120px;
+        background: #ffffff1a;
+        border-radius: 999px;
+      }
+
+      .swiper-pagination-progressbar .swiper-pagination-progressbar-fill {
+        background: var(--acid);
+      }
+
+      @media (max-width: 768px) {
+        .content { border-left: none; padding-left: 0; }
+        .swiper-pagination { display: none; }
+      }
+    </style>
+    <script type="importmap">
+      {
+        "imports": {
+          "react": "https://esm.sh/react@18.2.0",
+          "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+          "swiper/react": "https://esm.sh/swiper@11/react?external=react,react-dom",
+          "swiper/modules": "https://esm.sh/swiper@11/modules?external=react,react-dom"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+
+    <script type="module">
+      import React from "react";
+      import { createRoot } from "react-dom/client";
+      import { Swiper, SwiperSlide } from "swiper/react";
+      import { Mousewheel, Pagination } from "swiper/modules";
+      import htm from "https://esm.sh/htm@3";
+
+      const html = htm.bind(React.createElement);
+
+      const slides = [
+        {
+          id: "s1",
+          kicker: "01 / STRATA",
+          title: "PLATE",
+          body: "Parallax is driven by slide progress, not just data attributes.",
+          tags: ["Progress", "Depth", "React"]
+        },
+        {
+          id: "s2",
+          kicker: "02 / TENSION",
+          title: "SHIFT",
+          body: "Scroll energy bends the layers and subtly changes scale.",
+          tags: ["Translate", "Scale", "Swiping"]
+        },
+        {
+          id: "s3",
+          kicker: "03 / RELEASE",
+          title: "DRIFT",
+          body: "Release on edges for a more native scroll handoff.",
+          tags: ["Mousewheel", "Edge", "Minimal"]
+        }
+      ];
+
+      function updateProgress(swiper) {
+        swiper.slides.forEach((slide) => {
+          const p = slide.progress;
+          slide.style.setProperty("--p", p.toFixed(3));
+          slide.style.setProperty("--ap", Math.min(Math.abs(p), 1).toFixed(3));
+        });
+      }
+
+      function App() {
+        return html`
+          <div className="app">
+            <div className="frame">SWIPER PARALLAX</div>
+            <${Swiper}
+              direction="vertical"
+              slidesPerView=${1}
+              speed=${1000}
+              watchSlidesProgress=${true}
+              mousewheel=${{ forceToAxis: true, thresholdDelta: 30, thresholdTime: 200, releaseOnEdges: true }}
+              pagination=${{ clickable: true, type: "progressbar" }}
+              onProgress=${updateProgress}
+              onSetTranslate=${updateProgress}
+              modules=${[Mousewheel, Pagination]}
+              className="swiper"
+            >
+              ${slides.map((s) => html`
+                <${SwiperSlide} className=${`slide ${s.id}`}>
+                  <div className="orb o1"></div>
+                  <div className="orb o2"></div>
+                  <div className="content">
+                    <div className="kicker">${s.kicker}</div>
+                    <h1>${s.title}</h1>
+                    <p>${s.body}</p>
+                    <div className="meta">
+                      ${s.tags.map((t) => html`<span>${t}</span>`)}
+                    </div>
+                  </div>
+                <//>
+              `)}
+            <//>
+            <div className="hint">SCROLL</div>
+          </div>
+        `;
+      }
+
+      createRoot(document.getElementById("root")).render(html`<${App} />`);
+    </script>
+  </body>
+</html>

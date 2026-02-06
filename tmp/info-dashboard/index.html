@@ -1,0 +1,619 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>信息看板 / Ops Dashboard</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Spline+Sans:wght@300;400;500;600&display=swap" />
+    <style>
+      :root {
+        --bg: #f2f0e9;
+        --panel: #ffffff;
+        --panel-2: #f8f6f0;
+        --stroke: #d9dde4;
+        --muted: #6c7682;
+        --text: #1a1f25;
+        --accent: #9be000;
+        --accent-2: #ff8a3c;
+        --accent-3: #2ec6ff;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        font-family: "Spline Sans", sans-serif;
+        color: var(--text);
+        background:
+          radial-gradient(900px 400px at 10% -10%, #e7eef5 0%, transparent 60%),
+          radial-gradient(800px 500px at 90% 10%, #f2eee7 0%, transparent 65%),
+          radial-gradient(700px 400px at 50% 90%, #e9f1e6 0%, transparent 60%),
+          var(--bg);
+        min-height: 100vh;
+      }
+
+      .noise {
+        position: fixed;
+        inset: 0;
+        background-image: url("data:image/svg+xml,%3Csvg width='120' height='120' viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)' opacity='0.06'/%3E%3C/svg%3E");
+        mix-blend-mode: multiply;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .wrap {
+        position: relative;
+        z-index: 2;
+        padding: 28px clamp(16px, 4vw, 48px) 48px;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 16px;
+        margin-bottom: 24px;
+      }
+
+      .title {
+        font-family: "Chakra Petch", sans-serif;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        font-size: 14px;
+        color: var(--muted);
+      }
+
+      .headline {
+        font-family: "Chakra Petch", sans-serif;
+        font-weight: 700;
+        font-size: clamp(26px, 3vw, 36px);
+        letter-spacing: 0.02em;
+      }
+
+      .meta {
+        text-align: right;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .card {
+        background: linear-gradient(160deg, rgba(255,255,255,0.9), rgba(255,255,255,0.75));
+        border: 1px solid var(--stroke);
+        border-radius: 18px;
+        padding: 18px 20px;
+        box-shadow: 0 24px 40px rgba(21, 28, 36, 0.12);
+        transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
+      }
+
+      .card:hover {
+        transform: translateY(-6px);
+        border-color: rgba(155, 224, 0, 0.35);
+        box-shadow: 0 28px 50px rgba(21, 28, 36, 0.18);
+      }
+
+      .card h3 {
+        margin: 0 0 10px 0;
+        font-size: 13px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+        font-weight: 600;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .kpi {
+        background: var(--panel);
+        border: 1px solid var(--stroke);
+        border-radius: 14px;
+        padding: 14px;
+        display: grid;
+        gap: 8px;
+        transition: transform 0.3s ease, border-color 0.3s ease;
+      }
+
+      .kpi:hover {
+        transform: translateY(-4px);
+        border-color: rgba(155, 224, 0, 0.35);
+      }
+
+      .kpi .value {
+        font-family: "Chakra Petch", sans-serif;
+        font-size: 24px;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+        transform-origin: left center;
+      }
+
+      .kpi .delta {
+        font-size: 12px;
+        color: var(--muted);
+      }
+
+      .spark {
+        height: 32px;
+      }
+
+      .spark path:not(.shade) {
+        stroke: var(--accent);
+        stroke-width: 2;
+        fill: none;
+        stroke-dasharray: 140;
+        stroke-dashoffset: 140;
+      }
+
+      .spark .shade {
+        fill: rgba(155, 224, 0, 0.18);
+        stroke: none;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: rgba(8, 12, 16, 0.04);
+        border: 1px solid rgba(8, 12, 16, 0.08);
+      }
+
+      .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--accent);
+        box-shadow: 0 0 12px rgba(155, 224, 0, 0.6);
+        animation: pulse 2.2s ease infinite;
+      }
+
+      .panel-large { grid-column: span 7; }
+      .panel-medium { grid-column: span 5; }
+      .panel-full { grid-column: span 12; }
+
+      .list {
+        display: grid;
+        gap: 12px;
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr auto;
+        gap: 16px;
+        align-items: center;
+        padding: 12px 0;
+        border-bottom: 1px solid rgba(8, 12, 16, 0.08);
+        transition: transform 0.3s ease, background 0.3s ease;
+      }
+
+      .row:hover {
+        transform: translateX(6px);
+        background: rgba(155, 224, 0, 0.04);
+      }
+
+      .row:last-child { border-bottom: 0; }
+
+      .severity {
+        font-size: 11px;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        padding: 4px 8px;
+        border-radius: 6px;
+        border: 1px solid rgba(8, 12, 16, 0.12);
+      }
+
+      .sev-high { color: #c15617; background: rgba(255, 138, 60, 0.2); }
+      .sev-low { color: #1c7ea3; background: rgba(46, 198, 255, 0.18); }
+
+      .bars {
+        display: grid;
+        gap: 10px;
+      }
+
+      .bar {
+        display: grid;
+        grid-template-columns: 120px 1fr auto;
+        gap: 12px;
+        align-items: center;
+        font-size: 13px;
+      }
+
+      .bar-track {
+        height: 8px;
+        border-radius: 999px;
+        background: #eef1f5;
+        border: 1px solid var(--stroke);
+        overflow: hidden;
+      }
+
+      .bar-fill {
+        height: 100%;
+        width: 0%;
+        background: linear-gradient(90deg, var(--accent), #7dff94);
+        border-radius: 999px;
+      }
+
+      .matrix {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .tile {
+        background: var(--panel-2);
+        border: 1px solid var(--stroke);
+        border-radius: 12px;
+        padding: 12px;
+        min-height: 90px;
+        display: grid;
+        gap: 8px;
+        transition: transform 0.3s ease, border-color 0.3s ease;
+      }
+
+      .tile:hover {
+        transform: translateY(-4px);
+        border-color: rgba(46, 198, 255, 0.35);
+      }
+      .tile .label {
+        font-size: 11px;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .tile .value {
+        font-family: "Chakra Petch", sans-serif;
+        font-size: 20px;
+        font-weight: 600;
+      }
+
+      .footer {
+        margin-top: 16px;
+        font-size: 12px;
+        color: var(--muted);
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      @keyframes pulse {
+        0% { transform: scale(1); box-shadow: 0 0 10px rgba(155, 224, 0, 0.5); }
+        50% { transform: scale(1.3); box-shadow: 0 0 18px rgba(155, 224, 0, 0.65); }
+        100% { transform: scale(1); box-shadow: 0 0 10px rgba(155, 224, 0, 0.5); }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        * { animation: none !important; }
+      }
+
+      @media (max-width: 980px) {
+        .panel-large, .panel-medium { grid-column: span 12; }
+        .kpis { grid-template-columns: 1fr; }
+        .row { grid-template-columns: 1fr; gap: 8px; }
+      }
+
+      @media (max-width: 720px) {
+        header { grid-template-columns: 1fr; text-align: left; }
+        .meta { text-align: left; }
+        .matrix { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .bar { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="noise"></div>
+    <div class="wrap">
+      <header>
+        <div>
+          <div class="title">Atlas / Ops Board</div>
+          <div class="headline">信息看板 · 运行态势总览</div>
+        </div>
+        <div class="meta">
+          <div>Shift: 02A</div>
+          <div>Local 21:04</div>
+        </div>
+      </header>
+
+      <section class="grid">
+        <div class="card panel-large">
+          <h3>Live Metrics</h3>
+          <div class="kpis">
+            <div class="kpi">
+              <div class="pill"><span class="dot"></span>Core Uptime</div>
+              <div class="value" data-value="99.982" data-range="0.02" data-decimals="3" data-suffix="%">0</div>
+              <div class="delta">+0.014% vs 24h</div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <path class="shade" d="M0,18 L10,16 L20,19 L30,14 L40,16 L50,12 L60,13 L70,9 L80,10 L90,8 L100,7 L100,24 L0,24 Z" />
+                <path class="line" d="M0,18 L10,16 L20,19 L30,14 L40,16 L50,12 L60,13 L70,9 L80,10 L90,8 L100,7" />
+              </svg>
+            </div>
+            <div class="kpi">
+              <div class="pill"><span class="dot" style="background: var(--accent-3);"></span>Latency</div>
+              <div class="value" data-value="42" data-range="4" data-decimals="0" data-suffix=" ms">0</div>
+              <div class="delta">-6 ms trend</div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <path class="shade" d="M0,16 L10,14 L20,12 L30,11 L40,12 L50,10 L60,9 L70,8 L80,9 L90,7 L100,6 L100,24 L0,24 Z" />
+                <path class="line" d="M0,16 L10,14 L20,12 L30,11 L40,12 L50,10 L60,9 L70,8 L80,9 L90,7 L100,6" style="stroke: var(--accent-3);" />
+              </svg>
+            </div>
+            <div class="kpi">
+              <div class="pill"><span class="dot" style="background: var(--accent-2);"></span>Error Burst</div>
+              <div class="value" data-value="0.18" data-range="0.08" data-decimals="2" data-suffix="%">0</div>
+              <div class="delta">-0.05% vs 4h</div>
+              <svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none">
+                <path class="shade" d="M0,14 L10,13 L20,12 L30,14 L40,13 L50,16 L60,15 L70,17 L80,16 L90,18 L100,19 L100,24 L0,24 Z" style="fill: rgba(255,122,0,0.2);" />
+                <path class="line" d="M0,14 L10,13 L20,12 L30,14 L40,13 L50,16 L60,15 L70,17 L80,16 L90,18 L100,19" style="stroke: var(--accent-2);" />
+              </svg>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel-medium">
+          <h3>Alert Feed</h3>
+          <div class="list">
+            <div class="row">
+              <div>
+                <div>Region 3 cache cold start</div>
+                <div class="meta" style="text-align:left;">3m ago · Node 3B</div>
+              </div>
+              <div class="severity sev-high">High</div>
+              <div class="pill">Actioned</div>
+            </div>
+            <div class="row">
+              <div>
+                <div>API throttle spike</div>
+                <div class="meta" style="text-align:left;">11m ago · Gate 7</div>
+              </div>
+              <div class="severity sev-low">Low</div>
+              <div class="pill">Monitoring</div>
+            </div>
+            <div class="row">
+              <div>
+                <div>Backup sync delayed</div>
+                <div class="meta" style="text-align:left;">19m ago · Vault 2</div>
+              </div>
+              <div class="severity sev-low">Low</div>
+              <div class="pill">Queued</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel-medium">
+          <h3>Queue Pressure</h3>
+          <div class="bars">
+            <div class="bar">
+              <div>Ingress</div>
+              <div class="bar-track"><div class="bar-fill" data-target="78" data-range="6"></div></div>
+              <div>78%</div>
+            </div>
+            <div class="bar">
+              <div>Sync</div>
+              <div class="bar-track"><div class="bar-fill" data-target="52" data-range="8"></div></div>
+              <div>52%</div>
+            </div>
+            <div class="bar">
+              <div>Index</div>
+              <div class="bar-track"><div class="bar-fill" data-target="34" data-range="10"></div></div>
+              <div>34%</div>
+            </div>
+            <div class="bar">
+              <div>Archive</div>
+              <div class="bar-track"><div class="bar-fill" data-target="64" data-range="7"></div></div>
+              <div>64%</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel-large">
+          <h3>Sector Matrix</h3>
+          <div class="matrix">
+            <div class="tile">
+              <div class="label">Cluster A1</div>
+              <div class="value">Stabilized</div>
+              <div class="pill"><span class="dot"></span>Nominal</div>
+            </div>
+            <div class="tile">
+              <div class="label">Cluster B2</div>
+              <div class="value">81%</div>
+              <div class="pill"><span class="dot" style="background: var(--accent-3);"></span>Load Shift</div>
+            </div>
+            <div class="tile">
+              <div class="label">Cluster C4</div>
+              <div class="value">Queued</div>
+              <div class="pill"><span class="dot" style="background: var(--accent-2);"></span>Elevated</div>
+            </div>
+            <div class="tile">
+              <div class="label">Cluster D9</div>
+              <div class="value">98%</div>
+              <div class="pill"><span class="dot"></span>Nominal</div>
+            </div>
+            <div class="tile">
+              <div class="label">Cluster F7</div>
+              <div class="value">74%</div>
+              <div class="pill"><span class="dot" style="background: var(--accent-3);"></span>Rebalance</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card panel-full">
+          <h3>Ops Notes</h3>
+          <div class="row" style="border-bottom: 0;">
+            <div>
+              <div>03:00Z window: routing update + cache warmup sequence</div>
+              <div class="meta" style="text-align:left;">Lead: M. Song · Block: 12 min</div>
+            </div>
+            <div class="severity sev-high">Critical</div>
+            <div class="pill">Runbook 7.4</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="footer">Last refresh · <span id="refresh">just now</span></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.12.5/dist/gsap.min.js"></script>
+    <script>
+    const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const refreshEl = document.getElementById("refresh");
+    const values = Array.from(document.querySelectorAll(".value[data-value]"));
+    const bars = Array.from(document.querySelectorAll(".bar-fill[data-target]"));
+    const lines = Array.from(document.querySelectorAll(".spark .line"));
+
+    const metrics = values.map((el) => ({
+      el,
+      base: parseFloat(el.dataset.value || "0"),
+      range: parseFloat(el.dataset.range || "0"),
+      decimals: parseInt(el.dataset.decimals || "0", 10),
+      suffix: el.dataset.suffix || "",
+      current: parseFloat(el.dataset.value || "0")
+    }));
+
+    const barMetrics = bars.map((el) => ({
+      el,
+      base: parseFloat(el.dataset.target || "0"),
+      range: parseFloat(el.dataset.range || "0"),
+      current: 0
+    }));
+
+    lines.forEach((line) => {
+      const length = line.getTotalLength();
+      line.dataset.length = String(length);
+      line.style.strokeDasharray = length;
+      line.style.strokeDashoffset = length;
+    });
+
+    function clamp(val, min, max) {
+      return Math.max(min, Math.min(max, val));
+    }
+
+    function getLimits(metric) {
+      if (metric.suffix.includes("%")) return { min: 0, max: 100 };
+      if (metric.suffix.includes("ms")) return { min: 0, max: 200 };
+      return { min: 0, max: Number.POSITIVE_INFINITY };
+    }
+
+    function formatValue(metric, value) {
+      return `${value.toFixed(metric.decimals)}${metric.suffix}`;
+    }
+
+    function animateLines(delayBase = 0) {
+      lines.forEach((line, i) => {
+        const length = parseFloat(line.dataset.length || "0");
+        line.style.strokeDasharray = length;
+        line.style.strokeDashoffset = length;
+        if (window.gsap && !prefersReduced) {
+          gsap.to(line, {
+            strokeDashoffset: 0,
+            duration: 1.2,
+            delay: delayBase + i * 0.12,
+            ease: "power2.out"
+          });
+        } else {
+          line.style.strokeDashoffset = "0";
+        }
+      });
+    }
+
+    function refreshData(animate = true) {
+      if (refreshEl) {
+        refreshEl.textContent = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      }
+
+      metrics.forEach((metric, i) => {
+        const { min, max } = getLimits(metric);
+        const target = clamp(
+          metric.base + (Math.random() * 2 - 1) * metric.range,
+          min,
+          max
+        );
+
+        if (!window.gsap || !animate || prefersReduced) {
+          metric.current = target;
+          metric.el.textContent = formatValue(metric, target);
+          return;
+        }
+
+        const obj = { val: metric.current };
+        gsap.to(obj, {
+          val: target,
+          duration: 1.1,
+          delay: 0.1 + i * 0.05,
+          ease: "power2.out",
+          onUpdate: () => {
+            metric.el.textContent = formatValue(metric, obj.val);
+          },
+          onComplete: () => {
+            metric.current = target;
+          }
+        });
+      });
+
+      barMetrics.forEach((metric, i) => {
+        const target = clamp(
+          metric.base + (Math.random() * 2 - 1) * metric.range,
+          0,
+          100
+        );
+        metric.current = target;
+        if (!window.gsap || !animate || prefersReduced) {
+          metric.el.style.width = `${target}%`;
+          return;
+        }
+        gsap.to(metric.el, {
+          width: `${target}%`,
+          duration: 1.1,
+          delay: 0.25 + i * 0.08,
+          ease: "power2.out"
+        });
+      });
+
+      animateLines(0.2);
+
+      if (window.gsap && animate && !prefersReduced) {
+        gsap.fromTo(
+          ".value[data-value]",
+          { scale: 1, y: 0 },
+          {
+            keyframes: [
+              { scale: 1.18, y: -8, duration: 0.12, ease: "power4.out" },
+              { scale: 0.96, y: 2, duration: 0.12, ease: "power2.in" },
+              { scale: 1.1, y: -4, duration: 0.14, ease: "power2.out" },
+              { scale: 1, y: 0, duration: 0.18, ease: "power2.out" }
+            ],
+            stagger: 0.08
+          }
+        );
+      }
+    }
+
+    if (prefersReduced || !window.gsap) {
+      refreshData(false);
+    } else {
+      const tl = gsap.timeline({ defaults: { ease: "power3.out" } });
+      tl.from("header .title", { y: 10, opacity: 0, duration: 0.5 })
+        .from("header .headline", { y: 12, opacity: 0, duration: 0.6 }, "-=0.3")
+        .from("header .meta", { y: 10, opacity: 0, duration: 0.5 }, "-=0.4")
+        .from(".card", { y: 18, opacity: 0, duration: 0.7, stagger: 0.08 }, "-=0.2")
+        .from(".kpi", { y: 10, opacity: 0, duration: 0.5, stagger: 0.06 }, "-=0.4")
+        .from(".row", { x: -12, opacity: 0, duration: 0.5, stagger: 0.06 }, "-=0.4")
+        .from(".tile", { y: 10, opacity: 0, duration: 0.4, stagger: 0.05 }, "-=0.3")
+        .call(() => refreshData(true), [], 0.2);
+    }
+
+    setInterval(() => refreshData(true), 6000);
+    </script>
+  </body>
+</html>

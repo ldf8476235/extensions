@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>StandX for Omni Variational | 3D Trading Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Archivo:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="landing.css" />
+  </head>
+  <body>
+    <div class="scene" aria-hidden="true">
+      <div class="scene__layer scene__layer--one" data-parallax="18"></div>
+      <div class="scene__layer scene__layer--two" data-parallax="28"></div>
+      <div class="scene__layer scene__layer--three" data-parallax="40"></div>
+      <div class="scene__grid"></div>
+    </div>
+
+    <div id="scroll-progress" aria-hidden="true"></div>
+
+    <div class="page">
+      <header class="nav">
+        <div class="brand">
+          <span class="brand__mark"></span>
+          StandX
+        </div>
+        <nav class="nav__links" aria-label="Primary">
+          <a href="#features">Features</a>
+          <a href="#flow">Workflow</a>
+          <a href="#markets">Markets</a>
+          <a href="#safety">Safety</a>
+        </nav>
+        <button class="btn btn--primary">Add to Chrome</button>
+      </header>
+
+      <section class="hero">
+        <div class="hero__copy">
+          <div class="pill" data-reveal>Omni Variational overlay - 3D signal control</div>
+          <h1 class="hero__title" data-reveal>Hyperreal depth for every trade decision.</h1>
+          <p class="hero__lede" data-reveal>
+            StandX wraps your trading screen with a precision console for live spreads, auto orders,
+            and guardrails - built to keep BTC and XAU execution in perfect sync.
+          </p>
+          <div class="hero__actions" data-reveal>
+            <button class="btn btn--primary">Install StandX</button>
+            <button class="btn btn--ghost">View 60s demo</button>
+          </div>
+          <div class="hero__stats" data-reveal>
+            <div class="stat">
+              <span>Spread refresh</span>
+              <strong>0.8s</strong>
+            </div>
+            <div class="stat">
+              <span>Route checks</span>
+              <strong>Always on</strong>
+            </div>
+            <div class="stat">
+              <span>Markets</span>
+              <strong>BTC + XAU</strong>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero__stage" data-tilt="9" data-reveal data-delay="100">
+          <div class="stage__plate" data-parallax="12"></div>
+          <div class="stage__card stage__card--main" data-parallax="20">
+            <div class="card__header">
+              <div>
+                <div class="card__title">StandX Live</div>
+                <div class="card__subtitle">Positions monitor</div>
+              </div>
+              <div class="card__status">
+                <span class="status-dot"></span>
+                Synced
+              </div>
+            </div>
+            <div class="card__spread">
+              <span>Live Spread</span>
+              <strong>+12.4</strong>
+              <em>XAU-USD - WebSocket</em>
+            </div>
+            <div class="card__split">
+              <div>
+                <h4>Auto Open Order</h4>
+                <p>Threshold 20</p>
+                <p>Compare &gt;</p>
+                <p>Direction Short Only</p>
+              </div>
+              <div>
+                <h4>Liq Alert</h4>
+                <p>Mark - Liq &lt; 500</p>
+                <p>Cooldown 60s</p>
+                <p>Channel Desktop</p>
+              </div>
+            </div>
+            <div class="card__actions">
+              <button class="btn btn--success">Open Long</button>
+              <button class="btn btn--danger">Open Short</button>
+            </div>
+          </div>
+          <div class="stage__card stage__card--side" data-parallax="30">
+            <div class="side__title">Route Guard</div>
+            <div class="side__line">BTC requires /BTC</div>
+            <div class="side__line">XAU requires /PAXG</div>
+            <div class="side__badge">Locked</div>
+          </div>
+          <div class="stage__card stage__card--chip" data-parallax="26">
+            <div class="chip__label">Auto Order</div>
+            <div class="chip__value">Armed</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="features" class="section">
+        <div class="section__header" data-reveal>
+          <h2>Signal-first overlay, built for traders.</h2>
+          <p>Every module is optimized for speed, accuracy, and confidence.</p>
+        </div>
+        <div class="feature-grid">
+          <article class="feature" data-reveal data-delay="0">
+            <h3>Live spread engine</h3>
+            <p>Dedicated WebSocket channels for BTC and XAU with instant switching and zero flicker.</p>
+          </article>
+          <article class="feature" data-reveal data-delay="60">
+            <h3>Smart auto orders</h3>
+            <p>Trigger long or short only when your spread threshold holds for chosen frames.</p>
+          </article>
+          <article class="feature" data-reveal data-delay="120">
+            <h3>Persistent control</h3>
+            <p>Every toggle, panel state, and threshold is remembered between sessions.</p>
+          </article>
+          <article class="feature" data-reveal data-delay="180">
+            <h3>Precision guardrails</h3>
+            <p>Orders are blocked if the Var URL does not match the selected symbol.</p>
+          </article>
+        </div>
+      </section>
+
+      <section id="flow" class="section section--flow">
+        <div class="section__header" data-reveal>
+          <h2>Three steps from signal to execution.</h2>
+          <p>Calibrated automation with human control at every checkpoint.</p>
+        </div>
+        <div class="flow">
+          <div class="flow__step" data-reveal data-delay="0">
+            <div class="flow__index">01</div>
+            <div>
+              <h3>Connect &amp; select</h3>
+              <p>Pick BTC-USD or XAU-USD. StandX routes your Var page instantly.</p>
+            </div>
+          </div>
+          <div class="flow__step" data-reveal data-delay="80">
+            <div class="flow__index">02</div>
+            <div>
+              <h3>Track the spread</h3>
+              <p>Live summary cards remain visible even with zero positions.</p>
+            </div>
+          </div>
+          <div class="flow__step" data-reveal data-delay="160">
+            <div class="flow__index">03</div>
+            <div>
+              <h3>Execute with confidence</h3>
+              <p>Direction logic adapts per symbol so auto orders always align.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="markets" class="section section--markets">
+        <div class="section__header" data-reveal>
+          <h2>Markets tuned for precision.</h2>
+          <p>Custom logic per symbol to match real trading behavior.</p>
+        </div>
+        <div class="market-grid">
+          <article class="market" data-reveal data-delay="0">
+            <div class="market__tag">BTC-USD</div>
+            <h3>Crypto execution</h3>
+            <p>Default long/short behavior with 2000-point liq alert spacing.</p>
+            <div class="market__meta">Spread feed: /crypto/ws/price</div>
+          </article>
+          <article class="market" data-reveal data-delay="80">
+            <div class="market__tag">XAU-USD</div>
+            <h3>Gold tailored logic</h3>
+            <p>Inverted direction defaults and tighter 500-point liq alerts.</p>
+            <div class="market__meta">Spread feed: /crypto/ws/gold</div>
+          </article>
+        </div>
+      </section>
+
+      <section id="safety" class="section section--safety">
+        <div class="section__header" data-reveal>
+          <h2>Safety, persistence, and clarity.</h2>
+          <p>Automation with guardrails means no surprises.</p>
+        </div>
+        <div class="safety-grid">
+          <div class="safety" data-reveal data-delay="0">
+            <h3>URL validation</h3>
+            <p>Manual and auto orders require the Var page to match the selected symbol.</p>
+          </div>
+          <div class="safety" data-reveal data-delay="60">
+            <h3>Live status</h3>
+            <p>Spread status and connection state remain visible even with zero positions.</p>
+          </div>
+          <div class="safety" data-reveal data-delay="120">
+            <h3>Session memory</h3>
+            <p>Panel layout, toggles, and thresholds persist across refresh and restart.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="cta" id="install">
+        <div class="cta__copy" data-reveal>
+          <h2>Trade with depth, clarity, and control.</h2>
+          <p>Install StandX and keep your Omni Variational flow locked in.</p>
+        </div>
+        <div class="cta__panel" data-reveal data-delay="100">
+          <div class="cta__price">Free</div>
+          <div class="cta__note">Private beta access</div>
+          <button class="btn btn--primary">Add StandX to Chrome</button>
+          <div class="cta__fineprint">Runs on Omni Variational perpetual pages.</div>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <div class="footer__brand">StandX</div>
+        <div class="footer__meta">Precision overlay for Omni Variational.</div>
+      </footer>
+    </div>
+
+    <script src="landing.js"></script>
+  </body>
+</html>

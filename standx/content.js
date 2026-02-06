@@ -147,6 +147,7 @@
   let lastAutoQtyIsRandom = false;
   let summarySpreadValue = null;
   let lastSpreadDiff = null;
+  let pageHardRefreshTimer = null;
   let qtySyncTimer = null;
   let autoOrderEnabled = false;
   let autoOrderPending = false;
@@ -171,6 +172,7 @@
   const liqAlertCooldownMs = 10 * 60 * 1000;
   const liqAlertDefaultDistance = 2000;
   const liqAlertXauDistance = 500;
+  const pageHardRefreshIntervalMs = 2 * 60 * 60 * 1000;
   const chartSelectorHints = [
     "#chart-container",
     "#tv_chart_container",
@@ -863,6 +865,9 @@
 
   const updateSpreadSummary = (value) => {
     lastSpreadDiff = value;
+    if (!summarySpreadValue) {
+      ensureSpreadSummaryVisible();
+    }
     if (summarySpreadValue) {
       setSpreadSignedValue(summarySpreadValue, value);
     }
@@ -2101,6 +2106,7 @@
   };
 
   const renderPositions = (payload) => {
+    summarySpreadValue = null;
     positionsList.innerHTML = "";
     const apiPositions = extractPositions(payload).filter((position) => !isZeroQty(position));
     const pagePositions = extractPagePositions().filter((position) => !isZeroQty(position));
@@ -2120,6 +2126,18 @@
     grid.appendChild(buildPositionsColumn("Var", pagePositions));
     positionsList.appendChild(grid);
     positionsList.appendChild(buildPositionsSummary(apiPositions, pagePositions));
+  };
+
+  const ensureSpreadSummaryVisible = () => {
+    if (!positionsList) {
+      return;
+    }
+    const existing = positionsList.querySelector(".standx-summary");
+    if (existing) {
+      return;
+    }
+    const summary = buildPositionsSummary([], []);
+    positionsList.appendChild(summary);
   };
 
   const updateTokenStatus = async () => {
@@ -2273,7 +2291,13 @@
 
   window.addEventListener("focus", requestTopLayer);
   document.addEventListener("visibilitychange", requestTopLayer);
-  window.addEventListener("pagehide", persistAllSettings);
+  window.addEventListener("pagehide", () => {
+    persistAllSettings();
+    if (pageHardRefreshTimer) {
+      clearInterval(pageHardRefreshTimer);
+      pageHardRefreshTimer = null;
+    }
+  });
   window.addEventListener("resize", updatePanelScale);
   if (window.visualViewport) {
     window.visualViewport.addEventListener("resize", updatePanelScale);
@@ -2338,6 +2362,15 @@
       }
       syncQtyToPage(qtyInput.value);
     }, 1000);
+  };
+
+  const startPageHardRefreshTimer = () => {
+    if (pageHardRefreshTimer) {
+      return;
+    }
+    pageHardRefreshTimer = setInterval(() => {
+      window.location.reload();
+    }, pageHardRefreshIntervalMs);
   };
 
   const syncTokenState = async () => {
@@ -2405,5 +2438,6 @@
       applyRefreshMode();
       syncTokenState();
       startQtySyncMonitor();
+      startPageHardRefreshTimer();
     });
 })();

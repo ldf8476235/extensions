@@ -1,0 +1,124 @@
+%PDF-1.4
+%ÿÿÿÿ
+1 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+2 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
+endobj
+3 0 obj
+<< /Type /Pages /Kids [5 0 R 7 0 R] /Count 2 >>
+endobj
+4 0 obj
+<< /Length 3437 >>
+stream
+0.120 0.350 0.550 rg
+BT /F2 26 Tf 54.00 720.00 Td (StandX Plugin Feature Guide) Tj ET
+0.350 0.350 0.350 rg
+BT /F1 11 Tf 54.00 683.60 Td (Scope: Omni Variational Perpetual pages | Generated 2026-02-03) Tj ET
+0.750 0.820 0.900 RG
+54.00 666.00 m 558.00 666.00 l S
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 648.00 Td (Overview) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 624.00 Td (- UI panel for manual and auto orders, spread monitoring, and position alerts.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 607.15 Td (- Runs only when the current URL contains the string 'perpetual'.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 590.30 Td (- Panel open or collapsed state and position are preserved across reloads.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 567.45 Td (Supported Symbols and Routing) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 543.45 Td (- Supported symbols: BTC-USD and XAU-USD.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 526.60 Td (- Switching symbol immediately navigates the Var page to the matching market.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 509.75 Td (- XAU route: https://omni.variational.io/perpetual/PAXG) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 492.90 Td (- BTC route: https://omni.variational.io/perpetual/BTC) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 476.05 Td (- On page load, if on omni.variational.io, the page redirects to the last) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 461.20 Td (  selected symbol.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 438.35 Td (Spread Feed and WebSocket) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 414.35 Td (- BTC spread WebSocket: ws://198.46.175.142:8888/crypto/ws/price) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 397.50 Td (- XAU spread WebSocket: ws://198.46.175.142:8888/crypto/ws/gold) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 380.65 Td (- Switching symbols closes the previous socket and ignores stale events to) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 365.80 Td (  prevent flicker.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 342.95 Td (Order Guardrails) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 318.95 Td (- Both manual and auto orders validate the Var URL matches the selected symbol.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 302.10 Td (- XAU requires 'PAXG' in the URL; BTC requires 'BTC' in the URL.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 285.25 Td (- If the URL does not match, the action is blocked and auto orders are stopped.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 262.40 Td (Auto Order Behavior) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 238.40 Td (- Uses a spread threshold with compare mode '>' or '<'.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 221.55 Td (- Original behavior \(BTC\): '<' defaults to long, '>' defaults to short.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 204.70 Td (- XAU behavior is inverted: '<' defaults to short, '>' defaults to long.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 187.85 Td (- Direction updates when compare changes; the inversion applies only to XAU.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 165.00 Td (Liquidation Alert) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 141.00 Td (- XAU alert distance: 500.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 124.15 Td (- Other symbols \(BTC\): 2000.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 107.30 Td (- Hint text updates when the symbol changes.) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 4 0 R >>
+endobj
+6 0 obj
+<< /Length 763 >>
+stream
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 720.00 Td (Settings Persistence \(Chrome Sync\)) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 696.00 Td (- Selected symbol and panel open or collapsed state.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 679.15 Td (- Panel position, hide chart, and refresh mode.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 662.30 Td (- Auto order enabled, threshold, compare, direction, frames, and quantity.) Tj ET
+0.120 0.350 0.550 rg
+BT /F2 15 Tf 54.00 639.45 Td (Safety and UX Notes) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 615.45 Td (- Spread display clears on symbol change to avoid mixing feeds.) Tj ET
+0.000 0.000 0.000 rg
+BT /F1 11 Tf 54.00 598.60 Td (- The plugin only activates on pages containing 'perpetual'.) Tj ET
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 3 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 1 0 R /F2 2 0 R >> >> /Contents 6 0 R >>
+endobj
+8 0 obj
+<< /Type /Catalog /Pages 3 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000015 00000 n 
+0000000085 00000 n 
+0000000160 00000 n 
+0000000223 00000 n 
+0000003712 00000 n 
+0000003848 00000 n 
+0000004662 00000 n 
+0000004798 00000 n 
+trailer
+<< /Size 9 /Root 8 0 R >>
+startxref
+4847
+%%EOF

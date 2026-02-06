@@ -1,0 +1,3 @@
+StandX 插件功能说明
+- 支持 BTC-USD / XAU-USD
+- 自动下单
