@@ -1,0 +1,18 @@
+{
+  "manifest_version": 3,
+  "name": "Var Perpetual Chart Hider",
+  "version": "0.1.0",
+  "description": "Automatically hide K-line chart when URL contains perpetual.",
+  "permissions": ["storage"],
+  "host_permissions": [
+    "http://localhost:8787/*",
+    "http://127.0.0.1:8787/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

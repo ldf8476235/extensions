@@ -33,6 +33,20 @@
 
         <div class="standx-section">
           <div class="standx-row">
+            <div>Account</div>
+            <button class="standx-chip" id="standx-account-refresh" type="button">Balance & Points</button>
+          </div>
+          <div class="standx-kv standx-account-kv">
+            <div>Balance</div>
+            <div><span id="standx-account-balance">--</span></div>
+            <div>Trading Points</div>
+            <div><span id="standx-account-points">--</span></div>
+          </div>
+          <div id="standx-account-status"></div>
+        </div>
+
+        <div class="standx-section">
+          <div class="standx-row">
             <div>Positions</div>
           </div>
           <div id="standx-positions" class="standx-list"></div>
@@ -121,6 +135,10 @@
   const hideChartButton = root.querySelector("#standx-hide-chart");
   const positionsList = root.querySelector("#standx-positions");
   const fetchStatus = root.querySelector("#standx-fetch-status");
+  const accountRefreshButton = root.querySelector("#standx-account-refresh");
+  const accountBalanceValue = root.querySelector("#standx-account-balance");
+  const accountPointsValue = root.querySelector("#standx-account-points");
+  const accountStatus = root.querySelector("#standx-account-status");
   const orderLongButton = root.querySelector("#standx-submit-long");
   const orderShortButton = root.querySelector("#standx-submit-short");
   const orderStatus = root.querySelector("#standx-order-status");
@@ -149,6 +167,8 @@
   let lastSpreadDiff = null;
   let pageHardRefreshTimer = null;
   let qtySyncTimer = null;
+  let qtyAutoFillLocked = false;
+  let accountFetching = false;
   let autoOrderEnabled = false;
   let autoOrderPending = false;
   let autoOrderArmed = true;
@@ -172,7 +192,7 @@
   const liqAlertCooldownMs = 10 * 60 * 1000;
   const liqAlertDefaultDistance = 2000;
   const liqAlertXauDistance = 500;
-  const pageHardRefreshIntervalMs = 2 * 60 * 60 * 1000;
+  const pageHardRefreshIntervalMs = 1 * 60 * 60 * 1000;
   const chartSelectorHints = [
     "#chart-container",
     "#tv_chart_container",
@@ -1108,6 +1128,24 @@
     return normalized.toFixed(4);
   };
 
+  const formatAccountMetricValue = (value) => {
+    if (value === null || value === undefined || value === "") {
+      return "--";
+    }
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) {
+        return "--";
+      }
+      const rounded = Math.round(value * 10000) / 10000;
+      return String(rounded);
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed || "--";
+    }
+    return String(value);
+  };
+
   const setNativeValue = (el, value) => {
     const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value")?.set;
     if (setter) {
@@ -1906,6 +1944,9 @@
     if (!qtyInput) {
       return;
     }
+    if (qtyAutoFillLocked) {
+      return;
+    }
     const currentValue = qtyInput.value;
     const userModified = lastAutoQty !== null
       && currentValue !== ""
@@ -2147,6 +2188,60 @@
     return hasToken;
   };
 
+  const updateAccountMetricsUI = (payload) => {
+    if (!payload || typeof payload !== "object") {
+      if (accountBalanceValue) {
+        accountBalanceValue.textContent = "--";
+      }
+      if (accountPointsValue) {
+        accountPointsValue.textContent = "--";
+      }
+      return;
+    }
+    if (accountBalanceValue) {
+      accountBalanceValue.textContent = formatAccountMetricValue(payload.balance);
+    }
+    if (accountPointsValue) {
+      accountPointsValue.textContent = formatAccountMetricValue(payload.points);
+    }
+  };
+
+  const refreshAccountMetrics = async () => {
+    if (accountFetching) {
+      return;
+    }
+    if (!hasToken) {
+      setStatus(accountStatus, "No token configured", "error");
+      return;
+    }
+    accountFetching = true;
+    if (accountRefreshButton) {
+      accountRefreshButton.disabled = true;
+      accountRefreshButton.textContent = "Loading...";
+    }
+    setStatus(accountStatus, "Loading account...", "");
+    const response = await sendMessage({ type: "GET_ACCOUNT_METRICS" });
+    if (!response || !response.ok) {
+      const errorMessage = response && response.error
+        ? response.error
+        : `Request failed (${response ? response.status : "no response"})`;
+      setStatus(accountStatus, errorMessage, "error");
+      accountFetching = false;
+      if (accountRefreshButton) {
+        accountRefreshButton.disabled = false;
+        accountRefreshButton.textContent = "Balance & Points";
+      }
+      return;
+    }
+    updateAccountMetricsUI(response.data || {});
+    setStatus(accountStatus, "Account updated", "success");
+    accountFetching = false;
+    if (accountRefreshButton) {
+      accountRefreshButton.disabled = false;
+      accountRefreshButton.textContent = "Balance & Points";
+    }
+  };
+
   const refreshPositions = async () => {
     if (!hasToken || isFetching) {
       return;
@@ -2227,6 +2322,9 @@
 
   closeButton.addEventListener("click", () => setPanelOpen(false));
   refreshButton.addEventListener("click", refreshPositions);
+  if (accountRefreshButton) {
+    accountRefreshButton.addEventListener("click", refreshAccountMetrics);
+  }
   refreshModeButton.addEventListener("click", () => {
     applyRefreshModeValue(refreshMode === "auto" ? "manual" : "auto");
   });
@@ -2256,6 +2354,7 @@
     applyAutoOrderDirectionValue(event.target.value);
   });
   qtyInput.addEventListener("input", (event) => {
+    qtyAutoFillLocked = true;
     syncQtyToPage(event.target.value);
     scheduleSettingPersist("standxQty", event.target.value);
   });
@@ -2376,6 +2475,8 @@
   const syncTokenState = async () => {
     const tokenReady = await updateTokenStatus();
     if (tokenReady) {
+      setStatus(accountStatus, "Ready", "success");
+      refreshAccountMetrics();
       if (refreshMode === "auto") {
         startPolling();
         refreshPositions();
@@ -2384,6 +2485,8 @@
       }
       return;
     }
+    updateAccountMetricsUI(null);
+    setStatus(accountStatus, "No token configured", "error");
     stopPolling();
   };
 

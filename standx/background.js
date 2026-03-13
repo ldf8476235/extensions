@@ -1,6 +1,12 @@
 const API_BASE = "https://perps.standx.com/api";
 const WS_URL_PRICE = "ws://198.46.175.142:8888/crypto/ws/price";
 const WS_URL_GOLD = "ws://198.46.175.142:8888/crypto/ws/gold";
+const POINTS_ENDPOINT_CANDIDATES = [
+  "/query_trading_points",
+  "/query_points",
+  "/query_point",
+  "/query_user_points"
+];
 const SIGN_VERSION = "v1";
 const BARK_BASE = "https://api.day.app/T8o673fCYtSqpLkryPZWmb/";
 const VAR_ORDER_URL_FRAGMENT = "/api/orders/new/";
@@ -21,6 +27,8 @@ let wsRetry = 0;
 let wsRetryTimer = null;
 let lastSpread = null;
 let spreadChannel = "price";
+let pointsEndpointResolved = "";
+let pointsEndpointProbeCompleted = false;
 const spreadPorts = new Set();
 
 function broadcastSpread(message) {
@@ -532,6 +540,192 @@ async function safeReadJson(response) {
   }
 }
 
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isPrimitiveMetricValue(value) {
+  return value !== null && value !== undefined
+    && (typeof value === "string" || typeof value === "number");
+}
+
+function normalizeMetricValue(value) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    return trimmed;
+  }
+  return null;
+}
+
+function findMetricByKeys(payload, keys, depth = 0) {
+  if (depth > 8 || payload === null || payload === undefined) {
+    return null;
+  }
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const value = findMetricByKeys(item, keys, depth + 1);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
+  }
+  if (!isPlainObject(payload)) {
+    return null;
+  }
+  for (const [key, value] of Object.entries(payload)) {
+    const normalizedKey = key.toLowerCase();
+    if (keys.has(normalizedKey) && isPrimitiveMetricValue(value)) {
+      const normalizedValue = normalizeMetricValue(value);
+      if (normalizedValue !== null) {
+        return normalizedValue;
+      }
+    }
+  }
+  for (const value of Object.values(payload)) {
+    const nested = findMetricByKeys(value, keys, depth + 1);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function findMetricByPattern(payload, pattern, depth = 0) {
+  if (depth > 8 || payload === null || payload === undefined) {
+    return null;
+  }
+  if (Array.isArray(payload)) {
+    for (const item of payload) {
+      const value = findMetricByPattern(item, pattern, depth + 1);
+      if (value !== null) {
+        return value;
+      }
+    }
+    return null;
+  }
+  if (!isPlainObject(payload)) {
+    return null;
+  }
+  for (const [key, value] of Object.entries(payload)) {
+    if (!pattern.test(key.toLowerCase())) {
+      continue;
+    }
+    if (!isPrimitiveMetricValue(value)) {
+      continue;
+    }
+    const normalizedValue = normalizeMetricValue(value);
+    if (normalizedValue !== null) {
+      return normalizedValue;
+    }
+  }
+  for (const value of Object.values(payload)) {
+    const nested = findMetricByPattern(value, pattern, depth + 1);
+    if (nested !== null) {
+      return nested;
+    }
+  }
+  return null;
+}
+
+function extractBalanceMetric(payload) {
+  const directCandidates = [
+    payload && payload.balance,
+    payload && payload.data && payload.data.balance,
+    payload && payload.result && payload.result.balance
+  ];
+  for (const candidate of directCandidates) {
+    if (!isPrimitiveMetricValue(candidate)) {
+      continue;
+    }
+    const normalized = normalizeMetricValue(candidate);
+    if (normalized !== null) {
+      return normalized;
+    }
+  }
+  return findMetricByKeys(payload, new Set(["balance"]));
+}
+
+function extractPointsMetric(payload) {
+  const exactKeys = new Set([
+    "trading_points",
+    "trading_point",
+    "trade_points",
+    "trade_point",
+    "points",
+    "point",
+    "score"
+  ]);
+  const exact = findMetricByKeys(payload, exactKeys);
+  if (exact !== null) {
+    return exact;
+  }
+  return findMetricByPattern(payload, /point|points|score/);
+}
+
+async function queryPointsMetricFromCandidates() {
+  if (pointsEndpointResolved) {
+    try {
+      const response = await fetchWithToken(pointsEndpointResolved, { method: "GET" });
+      if (!response.ok) {
+        return null;
+      }
+      const data = await safeReadJson(response);
+      return extractPointsMetric(data);
+    } catch {
+      return null;
+    }
+  }
+  if (pointsEndpointProbeCompleted) {
+    return null;
+  }
+  for (const path of POINTS_ENDPOINT_CANDIDATES) {
+    try {
+      const response = await fetchWithToken(path, { method: "GET" });
+      if (!response.ok) {
+        continue;
+      }
+      const data = await safeReadJson(response);
+      const points = extractPointsMetric(data);
+      if (points !== null) {
+        pointsEndpointResolved = path;
+        return points;
+      }
+    } catch {
+      // Ignore unsupported endpoints and keep trying.
+    }
+  }
+  pointsEndpointProbeCompleted = true;
+  return null;
+}
+
+async function queryAccountMetrics() {
+  const response = await fetchWithToken("/query_balance", { method: "GET" });
+  const data = await safeReadJson(response);
+  if (!response.ok) {
+    return { ok: false, status: response.status, data };
+  }
+  const balance = extractBalanceMetric(data);
+  let points = extractPointsMetric(data);
+  if (points === null) {
+    points = await queryPointsMetricFromCandidates();
+  }
+  return {
+    ok: true,
+    status: response.status,
+    data: {
+      balance,
+      points
+    }
+  };
+}
+
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message !== "object") {
     return false;
@@ -543,6 +737,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const response = await fetchWithToken("/query_positions", { method: "GET" });
         const data = await safeReadJson(response);
         sendResponse({ ok: response.ok, status: response.status, data });
+      } catch (error) {
+        sendResponse({ ok: false, status: 0, error: String(error) });
+      }
+    })();
+    return true;
+  }
+
+  if (message.type === "GET_ACCOUNT_METRICS") {
+    (async () => {
+      try {
+        const result = await queryAccountMetrics();
+        if (!result.ok) {
+          sendResponse({
+            ok: false,
+            status: result.status,
+            error: result && result.data && result.data.error
+              ? String(result.data.error)
+              : `Request failed (${result.status})`
+          });
+          return;
+        }
+        sendResponse({ ok: true, status: result.status, data: result.data });
       } catch (error) {
         sendResponse({ ok: false, status: 0, error: String(error) });
       }
