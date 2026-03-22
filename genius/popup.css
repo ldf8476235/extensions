@@ -4,7 +4,7 @@
   --ink: #1f2937;
   --muted: #6b7280;
   --accent: #0ea5e9;
-  --accent-ink: #083344;
+  --accent-ink: #0f172a;
   --panel: rgba(255, 255, 255, 0.82);
   --border: rgba(15, 23, 42, 0.08);
   --shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
@@ -69,7 +69,7 @@ body {
 }
 
 .status[data-state="on"] {
-  background: rgba(14, 165, 233, 0.2);
+  background: rgba(14, 165, 233, 0.26);
   color: var(--accent-ink);
 }
 

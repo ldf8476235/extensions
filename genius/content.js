@@ -3,26 +3,51 @@
     enabled: "geniusSwapEnabled",
     count: "geniusSwapCount",
     loopCount: "geniusSwapLoopCount",
+    runMode: "geniusSwapRunMode",
+    targetTodayVolume: "geniusSwapTargetTodayVolume",
   };
 
   const PANEL_ID = "genius-swap-panel";
+  const PANEL_LAYOUT_STORAGE_KEY = "geniusSwapPanelLayoutV1";
+  const PANEL_STATS_STORAGE_KEY = "geniusSwapPanelStatsV1";
   const LOG_LIMIT = 80;
   const POLL_INTERVAL_MS = 250;
   const WAIT_TIMEOUT_MS = 20000;
   const WAIT_AFTER_BUTTON_MS = 1000;
   const WAIT_AFTER_SAVED_TAB_MS = 2000;
-  const WAIT_AFTER_MAX_MS = 5000;
+  const SEARCH_RESULT_TIMEOUT_MS = 5000;
+  const WAIT_AFTER_MAX_MS = 15000;
   const WAIT_AFTER_CONFIRM_MS = 30000;
+  const WAIT_BEFORE_CONFIRM_MS = 1500;
   const WAIT_AFTER_REFRESH_MS = 3000;
+  const WAIT_BETWEEN_CYCLES_MIN_MS = 2000;
+  const WAIT_BETWEEN_CYCLES_MAX_MS = 5000;
+  const PANEL_DEFAULT_WIDTH = 240;
+  const PANEL_MIN_WIDTH = 220;
+  const PANEL_MIN_HEIGHT = 260;
+  const PANEL_MAX_WIDTH = 420;
+  const PANEL_MAX_HEIGHT = 720;
+  const PANEL_EDGE_GAP = 12;
+  const ORDER_HISTORY_PAGE_SIZE = 100;
+  const ORDER_HISTORY_MAX_PAGES = 10;
+  const PANEL_STATS_REFRESH_INTERVAL_MS = 60000;
+  const RUN_MODE_COUNT = "count";
+  const RUN_MODE_TARGET = "target";
   const USDT_SOURCE_NAMES = ["Tether USD", "USDT"];
+  const USDC_SOURCE_NAMES = ["USD Coin", "USDC"];
   const KOGE_SOURCE_NAMES = ["BNB48 Club Token", "KOGE"];
   const TARGET_SYMBOL_USDT = "USDT";
-  const TARGET_SYMBOL_KOGE = "KOGE";
+  const TARGET_SYMBOL_USDC = "USDC";
   const TARGET_CHAIN_NAME = "BNB";
+  const CHOOSE_TEXT = "Choose";
   const SAVED_TAB_TEXT = "已保存";
-  const CONFIRM_TEXT = "确认";
+  const CONFIRM_TEXTS = ["Confirm", "确认"];
   const CLOSE_TEXT = "Close";
   const REFRESH_TEXT = "Refresh";
+  const CONFIRMED_TEXT = "Confirmed";
+  const SUCCESS_TEXT = "Success";
+  const PENDING_TEXT = "Pending";
+  const SWAPPED_TO_TEXT = "Swapped to";
   const TAB_ROW_HINTS = ["Gas", "已保存"];
   const CLICKABLE_SELECTOR =
     "button,[role='button'],[role='option'],[role='tab'],[data-state],a,div.cursor-pointer,li";
@@ -34,11 +59,17 @@
     targetSymbol: TARGET_SYMBOL_USDT,
     targetChain: TARGET_CHAIN_NAME,
   };
-  const FLOW_USDT_TO_KOGE = {
-    label: "USDT->KOGE",
+  const FLOW_USDT_TO_USDC = {
+    label: "USDT->USDC",
     sourceNames: USDT_SOURCE_NAMES,
-    targetSymbol: TARGET_SYMBOL_KOGE,
-    targetChain: null,
+    targetSymbol: TARGET_SYMBOL_USDC,
+    targetChain: TARGET_CHAIN_NAME,
+  };
+  const FLOW_USDC_TO_USDT = {
+    label: "USDC->USDT",
+    sourceNames: USDC_SOURCE_NAMES,
+    targetSymbol: TARGET_SYMBOL_USDT,
+    targetChain: TARGET_CHAIN_NAME,
   };
 
   const SELECT_BUTTON_SELECTOR =
@@ -54,11 +85,27 @@
 
   let panelRefs = null;
   let panelObserver = null;
+  let panelInteractionCleanup = null;
+  let panelStatsRefreshTimer = null;
+  let panelStatsRefreshPromise = null;
   let running = false;
   let stopRequested = false;
   const logBuffer = [];
+  const panelStatsState = {
+    totalTradingVolume: null,
+    totalTradingVolumeSource: "",
+    todayTradingVolume: null,
+    todayTradingVolumeSource: "",
+    loading: false,
+    error: "",
+  };
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const randomBetween = (min, max) =>
+    Math.floor(Math.random() * (max - min + 1)) + min;
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
 
   const waitFor = async (finder, timeoutMs = WAIT_TIMEOUT_MS) => {
     const start = Date.now();
@@ -184,7 +231,13 @@
   const getSettings = () =>
     new Promise((resolve) => {
       if (!chrome || !chrome.storage || !chrome.storage.local) {
-        resolve({ enabled: false, count: 0 });
+        resolve({
+          enabled: false,
+          count: 0,
+          loopCount: 1,
+          runMode: RUN_MODE_COUNT,
+          targetTodayVolume: 0,
+        });
         return;
       }
       chrome.storage.local.get(
@@ -192,12 +245,18 @@
           [STORAGE_KEYS.enabled]: false,
           [STORAGE_KEYS.count]: 0,
           [STORAGE_KEYS.loopCount]: 1,
+          [STORAGE_KEYS.runMode]: RUN_MODE_COUNT,
+          [STORAGE_KEYS.targetTodayVolume]: 0,
         },
         (result) => {
           resolve({
             enabled: Boolean(result[STORAGE_KEYS.enabled]),
             count: Number(result[STORAGE_KEYS.count] || 0),
             loopCount: Number(result[STORAGE_KEYS.loopCount] || 1),
+            runMode: normalizeRunMode(result[STORAGE_KEYS.runMode]),
+            targetTodayVolume: normalizeTargetTodayVolume(
+              result[STORAGE_KEYS.targetTodayVolume]
+            ),
           });
         }
       );
@@ -235,6 +294,248 @@
     }
   };
 
+  const readPanelLayout = () => {
+    try {
+      const raw = window.localStorage?.getItem(PANEL_LAYOUT_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const savePanelLayout = (layout) => {
+    try {
+      window.localStorage?.setItem(
+        PANEL_LAYOUT_STORAGE_KEY,
+        JSON.stringify(layout)
+      );
+    } catch (error) {
+      // Ignore persistence failures in restrictive page contexts.
+    }
+  };
+
+  const readCachedPanelStats = () => {
+    try {
+      const raw = window.localStorage?.getItem(PANEL_STATS_STORAGE_KEY);
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") {
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      return null;
+    }
+  };
+
+  const savePanelStats = () => {
+    try {
+      window.localStorage?.setItem(
+        PANEL_STATS_STORAGE_KEY,
+        JSON.stringify({
+          totalTradingVolume: panelStatsState.totalTradingVolume,
+          totalTradingVolumeSource: panelStatsState.totalTradingVolumeSource,
+          todayTradingVolume: panelStatsState.todayTradingVolume,
+          todayTradingVolumeSource: panelStatsState.todayTradingVolumeSource,
+          error: panelStatsState.error,
+        })
+      );
+    } catch (error) {
+      // Ignore persistence failures in restrictive page contexts.
+    }
+  };
+
+  const hydratePanelStatsFromCache = () => {
+    const cached = readCachedPanelStats();
+    if (!cached) {
+      return;
+    }
+    const cachedValue = Number(cached.totalTradingVolume);
+    if (Number.isFinite(cachedValue) && cachedValue > 0) {
+      panelStatsState.totalTradingVolume = cachedValue;
+    }
+    if (typeof cached.totalTradingVolumeSource === "string") {
+      panelStatsState.totalTradingVolumeSource =
+        cached.totalTradingVolumeSource;
+    }
+    const cachedTodayValue = Number(cached.todayTradingVolume);
+    if (Number.isFinite(cachedTodayValue) && cachedTodayValue >= 0) {
+      panelStatsState.todayTradingVolume = cachedTodayValue;
+    }
+    if (typeof cached.todayTradingVolumeSource === "string") {
+      panelStatsState.todayTradingVolumeSource =
+        cached.todayTradingVolumeSource;
+    }
+    if (typeof cached.error === "string") {
+      panelStatsState.error = cached.error;
+    }
+  };
+
+  hydratePanelStatsFromCache();
+
+  const getPanelViewportBounds = () => ({
+    maxWidth: clamp(
+      window.innerWidth - PANEL_EDGE_GAP * 2,
+      PANEL_MIN_WIDTH,
+      PANEL_MAX_WIDTH
+    ),
+    maxHeight: clamp(
+      window.innerHeight - PANEL_EDGE_GAP * 2,
+      PANEL_MIN_HEIGHT,
+      PANEL_MAX_HEIGHT
+    ),
+  });
+
+  const getCurrentPanelLayout = (panel) => {
+    const rect = panel.getBoundingClientRect();
+    return {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    };
+  };
+
+  const normalizePanelLayout = (layout, fallbackHeight = PANEL_MIN_HEIGHT) => {
+    const { maxWidth, maxHeight } = getPanelViewportBounds();
+    const width = clamp(
+      Number(layout?.width) || PANEL_DEFAULT_WIDTH,
+      PANEL_MIN_WIDTH,
+      maxWidth
+    );
+    const height = clamp(
+      Number(layout?.height) || fallbackHeight,
+      PANEL_MIN_HEIGHT,
+      maxHeight
+    );
+    const maxLeft = Math.max(PANEL_EDGE_GAP, window.innerWidth - width - PANEL_EDGE_GAP);
+    const maxTop = Math.max(PANEL_EDGE_GAP, window.innerHeight - height - PANEL_EDGE_GAP);
+
+    return {
+      width,
+      height,
+      left: clamp(
+        Number(layout?.left) || window.innerWidth - width - 18,
+        PANEL_EDGE_GAP,
+        maxLeft
+      ),
+      top: clamp(
+        Number(layout?.top) || window.innerHeight - height - 18,
+        PANEL_EDGE_GAP,
+        maxTop
+      ),
+    };
+  };
+
+  const applyPanelLayout = (panel, layout) => {
+    panel.style.left = `${layout.left}px`;
+    panel.style.top = `${layout.top}px`;
+    panel.style.right = "auto";
+    panel.style.bottom = "auto";
+    panel.style.width = `${layout.width}px`;
+    panel.style.height = `${layout.height}px`;
+  };
+
+  const restorePanelLayout = (panel) => {
+    const measuredHeight = Math.max(panel.offsetHeight, PANEL_MIN_HEIGHT);
+    const layout = normalizePanelLayout(readPanelLayout(), measuredHeight);
+    applyPanelLayout(panel, layout);
+    savePanelLayout(layout);
+  };
+
+  const setupPanelInteractions = (panel, dragHandle, resizeHandle) => {
+    let activeMode = null;
+    let startX = 0;
+    let startY = 0;
+    let initialLayout = null;
+
+    const stopInteraction = () => {
+      if (!activeMode) {
+        return;
+      }
+      panel.classList.remove("is-dragging", "is-resizing");
+      document.documentElement.classList.remove("gsh-panel-interacting");
+      savePanelLayout(getCurrentPanelLayout(panel));
+      activeMode = null;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopInteraction);
+      window.removeEventListener("pointercancel", stopInteraction);
+    };
+
+    const handlePointerMove = (event) => {
+      if (!activeMode || !initialLayout) {
+        return;
+      }
+      const deltaX = event.clientX - startX;
+      const deltaY = event.clientY - startY;
+      let nextLayout = initialLayout;
+
+      if (activeMode === "drag") {
+        nextLayout = normalizePanelLayout({
+          ...initialLayout,
+          left: initialLayout.left + deltaX,
+          top: initialLayout.top + deltaY,
+        }, initialLayout.height);
+      }
+
+      if (activeMode === "resize") {
+        nextLayout = normalizePanelLayout({
+          ...initialLayout,
+          width: initialLayout.width + deltaX,
+          height: initialLayout.height + deltaY,
+        }, initialLayout.height);
+      }
+
+      applyPanelLayout(panel, nextLayout);
+    };
+
+    const startInteraction = (event, mode) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      activeMode = mode;
+      startX = event.clientX;
+      startY = event.clientY;
+      initialLayout = getCurrentPanelLayout(panel);
+      panel.classList.toggle("is-dragging", mode === "drag");
+      panel.classList.toggle("is-resizing", mode === "resize");
+      document.documentElement.classList.add("gsh-panel-interacting");
+      window.addEventListener("pointermove", handlePointerMove);
+      window.addEventListener("pointerup", stopInteraction);
+      window.addEventListener("pointercancel", stopInteraction);
+    };
+
+    const handleViewportResize = () => {
+      const nextLayout = normalizePanelLayout(getCurrentPanelLayout(panel));
+      applyPanelLayout(panel, nextLayout);
+      savePanelLayout(nextLayout);
+    };
+
+    const onDragPointerDown = (event) => startInteraction(event, "drag");
+    const onResizePointerDown = (event) => startInteraction(event, "resize");
+
+    dragHandle.addEventListener("pointerdown", onDragPointerDown);
+    resizeHandle.addEventListener("pointerdown", onResizePointerDown);
+    window.addEventListener("resize", handleViewportResize);
+
+    return () => {
+      stopInteraction();
+      dragHandle.removeEventListener("pointerdown", onDragPointerDown);
+      resizeHandle.removeEventListener("pointerdown", onResizePointerDown);
+      window.removeEventListener("resize", handleViewportResize);
+    };
+  };
+
   const normalizeText = (text) =>
     (text || "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -243,6 +544,20 @@
 
   const findRowByNames = (rows, names) =>
     rows.find((row) => matchesAny(row.name, names)) || null;
+
+  const findBestPositiveRowByNames = (rows, names) => {
+    const matched = rows.filter((row) => matchesAny(row.name, names));
+    if (!matched.length) {
+      return null;
+    }
+    const positive = matched
+      .filter((row) => row.amountValue > 0)
+      .sort((a, b) => b.amountValue - a.amountValue);
+    if (positive.length) {
+      return positive[0];
+    }
+    return matched[0];
+  };
 
   const logStep = (flow, message) => {
     if (flow?.label) {
@@ -260,6 +575,17 @@
     return Math.min(parsed, 999);
   };
 
+  const normalizeRunMode = (value) =>
+    value === RUN_MODE_TARGET ? RUN_MODE_TARGET : RUN_MODE_COUNT;
+
+  const normalizeTargetTodayVolume = (value) => {
+    const parsed = Number.parseFloat(String(value).replace(/,/g, "").trim());
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      return 0;
+    }
+    return Math.min(parsed, 999999999);
+  };
+
   const setEnabled = (value) => {
     if (!chrome || !chrome.storage || !chrome.storage.local) {
       return;
@@ -268,34 +594,330 @@
   };
 
   const resolveInitialFlow = (rows) => {
-    const hasUsdt = rows.some((row) =>
-      matchesAny(row.name, FLOW_USDT_TO_KOGE.sourceNames)
-    );
-    if (hasUsdt) {
-      addLog(`检测到USDT，执行 ${FLOW_USDT_TO_KOGE.label}`);
-      return FLOW_USDT_TO_KOGE;
+    const availableFlows = [
+      FLOW_USDT_TO_USDC,
+      FLOW_USDC_TO_USDT,
+      FLOW_BNB48_TO_USDT,
+    ]
+      .map((flow) => {
+        const row = findBestPositiveRowByNames(rows, flow.sourceNames);
+        if (!row || row.amountValue <= 0) {
+          return null;
+        }
+        return { flow, row };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.row.amountValue - a.row.amountValue);
+
+    if (availableFlows.length) {
+      const selected = availableFlows[0];
+      addLog(
+        `检测到可用来源 ${selected.row.symbol}(${selected.row.amountText || "0"})，执行 ${selected.flow.label}`
+      );
+      return selected.flow;
     }
+
+    const hasUsdt = rows.some((row) =>
+      matchesAny(row.name, FLOW_USDT_TO_USDC.sourceNames)
+    );
+    const hasUsdc = rows.some((row) =>
+      matchesAny(row.name, FLOW_USDC_TO_USDT.sourceNames)
+    );
     const hasKoge = rows.some((row) =>
       matchesAny(row.name, FLOW_BNB48_TO_USDT.sourceNames)
     );
-    if (hasKoge) {
-      addLog(`未检测到USDT，执行 ${FLOW_BNB48_TO_USDT.label}`);
-      return FLOW_BNB48_TO_USDT;
+    if (hasUsdt || hasUsdc || hasKoge) {
+      addLog("检测到候选代币，但可用数量为0，无法执行自动切换");
+      return null;
     }
-    addLog("未检测到USDT或BNB48，无法选择来源代币");
+
+    addLog("未检测到USDT、USDC或BNB48，无法选择来源代币");
     return null;
   };
 
-  const renderPanel = ({ enabled, loopCount }) => {
+  const renderPanel = ({
+    enabled,
+    loopCount,
+    runMode = RUN_MODE_COUNT,
+    targetTodayVolume = 0,
+  }) => {
     if (!panelRefs) {
       return;
     }
+    const mode = normalizeRunMode(runMode);
     panelRefs.toggle.checked = enabled;
     panelRefs.status.textContent = enabled ? "Enabled" : "Disabled";
     panelRefs.status.dataset.state = enabled ? "on" : "off";
     if (panelRefs.loopInput) {
       panelRefs.loopInput.value = String(loopCount || 1);
     }
+    if (panelRefs.targetInput) {
+      panelRefs.targetInput.value =
+        targetTodayVolume > 0 ? String(targetTodayVolume) : "";
+    }
+    if (panelRefs.countRow) {
+      panelRefs.countRow.hidden = mode !== RUN_MODE_COUNT;
+      panelRefs.countRow.style.display =
+        mode === RUN_MODE_COUNT ? "flex" : "none";
+    }
+    if (panelRefs.targetRow) {
+      panelRefs.targetRow.hidden = mode !== RUN_MODE_TARGET;
+      panelRefs.targetRow.style.display =
+        mode === RUN_MODE_TARGET ? "flex" : "none";
+    }
+    if (panelRefs.countModeButton) {
+      panelRefs.countModeButton.dataset.active =
+        String(mode === RUN_MODE_COUNT);
+      panelRefs.countModeButton.setAttribute(
+        "aria-pressed",
+        String(mode === RUN_MODE_COUNT)
+      );
+    }
+    if (panelRefs.targetModeButton) {
+      panelRefs.targetModeButton.dataset.active =
+        String(mode === RUN_MODE_TARGET);
+      panelRefs.targetModeButton.setAttribute(
+        "aria-pressed",
+        String(mode === RUN_MODE_TARGET)
+      );
+    }
+    if (panelRefs.targetProgress) {
+      const current = formatUsdDisplay(panelStatsState.todayTradingVolume);
+      panelRefs.targetProgress.textContent =
+        mode === RUN_MODE_TARGET
+          ? `当前 ${current} / 目标 ${formatUsdDisplay(targetTodayVolume)}`
+          : "达到目标值后自动停止";
+    }
+  };
+
+  const formatUsdDisplay = (value) => {
+    if (typeof value !== "number" || !Number.isFinite(value)) {
+      return "--";
+    }
+    return `$${new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(value)}`;
+  };
+
+  const renderPanelStats = () => {
+    if (!panelRefs?.totalTradingVolumeValue) {
+      return;
+    }
+    panelRefs.totalTradingVolumeValue.textContent = formatUsdDisplay(
+      panelStatsState.totalTradingVolume
+    );
+    if (panelRefs.todayTradingVolumeValue) {
+      panelRefs.todayTradingVolumeValue.textContent = formatUsdDisplay(
+        panelStatsState.todayTradingVolume
+      );
+    }
+
+    if (panelRefs.totalTradingVolumeMeta) {
+      if (panelStatsState.loading) {
+        panelRefs.totalTradingVolumeMeta.textContent = "更新中...";
+      } else if (panelStatsState.totalTradingVolumeSource) {
+        panelRefs.totalTradingVolumeMeta.textContent =
+          panelStatsState.totalTradingVolumeSource;
+      } else {
+        panelRefs.totalTradingVolumeMeta.textContent = "--";
+      }
+    }
+    if (panelRefs.todayTradingVolumeMeta) {
+      if (panelStatsState.loading) {
+        panelRefs.todayTradingVolumeMeta.textContent = "更新中...";
+      } else if (panelStatsState.todayTradingVolumeSource) {
+        panelRefs.todayTradingVolumeMeta.textContent =
+          panelStatsState.todayTradingVolumeSource;
+      } else {
+        panelRefs.todayTradingVolumeMeta.textContent = "--";
+      }
+    }
+    if (panelRefs.targetProgress) {
+      const current = formatUsdDisplay(panelStatsState.todayTradingVolume);
+      const targetValue = normalizeTargetTodayVolume(panelRefs.targetInput?.value);
+      panelRefs.targetProgress.textContent = panelStatsState.loading
+        ? "更新中..."
+        : targetValue > 0
+          ? `当前 ${current} / 目标 ${formatUsdDisplay(targetValue)}`
+          : `当前今日交易量 ${current}`;
+    }
+
+    if (panelRefs.statsError) {
+      panelRefs.statsError.textContent = panelStatsState.error || "";
+      panelRefs.statsError.hidden = !panelStatsState.error;
+    }
+  };
+
+  const extractCurrencyNumber = (text, label) => {
+    const normalized = (text || "").replace(/\s+/g, " ").trim();
+    if (!normalized) {
+      return null;
+    }
+    const labelPattern = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const afterLabel = normalized.match(
+      new RegExp(`${labelPattern}\\s*\\$?\\s*([\\d,]+(?:\\.\\d+)?)`, "i")
+    );
+    if (afterLabel) {
+      return Number.parseFloat(afterLabel[1].replace(/,/g, ""));
+    }
+    const fallback = normalized.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+    if (fallback) {
+      return Number.parseFloat(fallback[1].replace(/,/g, ""));
+    }
+    return null;
+  };
+
+  const extractFirstUsdValue = (text) => {
+    const match = String(text || "").match(/\$\s*([\d,]+(?:\.\d+)?)/);
+    if (!match) {
+      return 0;
+    }
+    const parsed = Number.parseFloat(match[1].replace(/,/g, ""));
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const fetchOrderHistoryPage = async (offset) => {
+    const url =
+      `/api/db/orderHistory?orderId=undefined&offset=${offset}` +
+      `&limit=${ORDER_HISTORY_PAGE_SIZE}&tokenAddress=undefined&startDate=undefined&endDate=undefined`;
+    const response = await fetch(url, {
+      credentials: "include",
+      headers: { accept: "application/json" },
+    });
+    if (!response.ok) {
+      throw new Error(`订单历史请求失败(${response.status})`);
+    }
+    const data = await response.json();
+    if (!Array.isArray(data)) {
+      throw new Error("订单历史响应格式异常");
+    }
+    return data;
+  };
+
+  const extractOrderGrossUsd = (row) =>
+    Number(
+      row?.result?.decodedResponse?.quote?.fees?.grossUsd ??
+        row?.result?.decodedResponse?.price?.fees?.grossUsd ??
+        0
+    ) || 0;
+
+  const extractOrderTimestamp = (row) => {
+    const candidates = [
+      row?.created_at,
+      row?.createdAt,
+      row?.updated_at,
+      row?.updatedAt,
+      row?.timestamp,
+      row?.time,
+      row?.result?.created_at,
+      row?.result?.createdAt,
+    ];
+    for (const value of candidates) {
+      if (!value) {
+        continue;
+      }
+      const parsed = new Date(value);
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+    return null;
+  };
+
+  const isWithinToday = (date) => {
+    if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+      return false;
+    }
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
+    return date >= start && date < end;
+  };
+
+  const isSuccessfulMarketSwap = (row) =>
+    row?.status === "success" && row?.order_type === "MARKET_SWAP";
+
+  const calculateTotalTradingVolumeFromOrders = (rows) =>
+    rows
+      .filter(isSuccessfulMarketSwap)
+      .reduce((sum, row) => sum + extractOrderGrossUsd(row), 0);
+
+  const calculateTodayTradingVolumeFromOrders = (rows) =>
+    rows
+      .filter(isSuccessfulMarketSwap)
+      .filter((row) => isWithinToday(extractOrderTimestamp(row)))
+      .reduce((sum, row) => sum + extractOrderGrossUsd(row), 0);
+
+  const refreshPanelStats = async () => {
+    if (panelStatsRefreshPromise) {
+      return panelStatsRefreshPromise;
+    }
+
+    panelStatsRefreshPromise = (async () => {
+      panelStatsState.loading = true;
+      panelStatsState.error = "";
+      renderPanelStats();
+
+      try {
+        const rows = [];
+        for (
+          let pageIndex = 0;
+          pageIndex < ORDER_HISTORY_MAX_PAGES;
+          pageIndex += 1
+        ) {
+          const offset = pageIndex * ORDER_HISTORY_PAGE_SIZE;
+          const pageRows = await fetchOrderHistoryPage(offset);
+          rows.push(...pageRows);
+          if (pageRows.length < ORDER_HISTORY_PAGE_SIZE) {
+            break;
+          }
+        }
+
+        const totalTradingVolume = calculateTotalTradingVolumeFromOrders(rows);
+        if (Number.isFinite(totalTradingVolume) && totalTradingVolume >= 0) {
+          panelStatsState.totalTradingVolume = totalTradingVolume;
+          panelStatsState.totalTradingVolumeSource = "来自订单历史汇总";
+        }
+
+        const todayTradingVolume = calculateTodayTradingVolumeFromOrders(rows);
+        if (Number.isFinite(todayTradingVolume) && todayTradingVolume >= 0) {
+          panelStatsState.todayTradingVolume = todayTradingVolume;
+          panelStatsState.todayTradingVolumeSource = "来自今日订单汇总";
+        }
+
+        if (
+          !Number.isFinite(panelStatsState.totalTradingVolume) &&
+          !Number.isFinite(panelStatsState.todayTradingVolume)
+        ) {
+          panelStatsState.error = "未获取到交易量统计";
+        }
+      } catch (error) {
+        panelStatsState.error =
+          error instanceof Error ? error.message : "交易量统计更新失败";
+      } finally {
+        panelStatsState.loading = false;
+        savePanelStats();
+        renderPanelStats();
+      }
+    })();
+
+    try {
+      await panelStatsRefreshPromise;
+    } finally {
+      panelStatsRefreshPromise = null;
+    }
+  };
+
+  const startPanelStatsRefresh = () => {
+    if (panelStatsRefreshTimer) {
+      window.clearInterval(panelStatsRefreshTimer);
+    }
+    refreshPanelStats();
+    panelStatsRefreshTimer = window.setInterval(() => {
+      refreshPanelStats();
+    }, PANEL_STATS_REFRESH_INTERVAL_MS);
   };
 
   const initPanel = () => {
@@ -306,6 +928,10 @@
     if (existing) {
       return;
     }
+    if (panelInteractionCleanup) {
+      panelInteractionCleanup();
+      panelInteractionCleanup = null;
+    }
     if (panelRefs) {
       panelRefs = null;
     }
@@ -314,7 +940,8 @@
     panel.id = PANEL_ID;
     panel.innerHTML = `
       <div class="gsh-header">
-        <div>
+        <div class="gsh-drag-handle" id="gsh-drag-handle" role="button" tabindex="0" aria-label="拖动悬浮窗">
+          <span class="gsh-drag-grip" aria-hidden="true"></span>
           <div class="gsh-title">Genius Swap</div>
         </div>
         <div class="gsh-status" id="gsh-status">Disabled</div>
@@ -322,7 +949,6 @@
       <div class="gsh-row">
         <div>
           <div class="gsh-label">Enable auto swap</div>
-          <div class="gsh-hint">Only runs on /zh/trade</div>
         </div>
         <label class="gsh-switch">
           <input type="checkbox" id="gsh-toggle" />
@@ -331,44 +957,150 @@
       </div>
       <div class="gsh-row">
         <div>
+          <div class="gsh-label">模式</div>
+          <div class="gsh-hint">切换停止条件</div>
+        </div>
+        <div class="gsh-mode-group" role="group" aria-label="运行模式">
+          <button class="gsh-mode-btn" id="gsh-mode-count" type="button">次数</button>
+          <button class="gsh-mode-btn" id="gsh-mode-target" type="button">目标交易量</button>
+        </div>
+      </div>
+      <div class="gsh-row" id="gsh-count-row">
+        <div>
           <div class="gsh-label">次数</div>
           <div class="gsh-hint">手动开启后执行</div>
         </div>
         <input class="gsh-input" id="gsh-loop-count" type="number" min="1" step="1" />
       </div>
+      <div class="gsh-row" id="gsh-target-row" hidden>
+        <div>
+          <div class="gsh-label">目标交易量</div>
+          <div class="gsh-hint" id="gsh-target-progress">达到目标值后自动停止</div>
+        </div>
+        <input class="gsh-input" id="gsh-target-volume" type="number" min="0.01" step="0.01" />
+      </div>
+      <div class="gsh-stats">
+        <div class="gsh-stats-grid">
+          <div class="gsh-stat">
+            <div class="gsh-stat-label">总交易量</div>
+            <div class="gsh-stat-value" id="gsh-total-trading-volume">--</div>
+            <div class="gsh-stat-meta" id="gsh-total-trading-volume-meta">--</div>
+          </div>
+          <div class="gsh-stat">
+            <div class="gsh-stat-label">今日交易量</div>
+            <div class="gsh-stat-value" id="gsh-today-trading-volume">--</div>
+            <div class="gsh-stat-meta" id="gsh-today-trading-volume-meta">--</div>
+          </div>
+        </div>
+        <div class="gsh-stats-error" id="gsh-stats-error" hidden></div>
+      </div>
       <div class="gsh-log">
         <div class="gsh-log-title">日志</div>
         <div class="gsh-log-list" id="gsh-log-list"></div>
       </div>
+      <div class="gsh-resize-handle" id="gsh-resize-handle" aria-hidden="true"></div>
     `;
     document.body.appendChild(panel);
 
     const toggle = panel.querySelector("#gsh-toggle");
     const status = panel.querySelector("#gsh-status");
     const logs = panel.querySelector("#gsh-log-list");
+    const countModeButton = panel.querySelector("#gsh-mode-count");
+    const targetModeButton = panel.querySelector("#gsh-mode-target");
+    const countRow = panel.querySelector("#gsh-count-row");
     const loopInput = panel.querySelector("#gsh-loop-count");
+    const targetRow = panel.querySelector("#gsh-target-row");
+    const targetInput = panel.querySelector("#gsh-target-volume");
+    const targetProgress = panel.querySelector("#gsh-target-progress");
+    const totalTradingVolumeValue = panel.querySelector(
+      "#gsh-total-trading-volume"
+    );
+    const totalTradingVolumeMeta = panel.querySelector(
+      "#gsh-total-trading-volume-meta"
+    );
+    const todayTradingVolumeValue = panel.querySelector(
+      "#gsh-today-trading-volume"
+    );
+    const todayTradingVolumeMeta = panel.querySelector(
+      "#gsh-today-trading-volume-meta"
+    );
+    const statsError = panel.querySelector("#gsh-stats-error");
+    const dragHandle = panel.querySelector("#gsh-drag-handle");
+    const resizeHandle = panel.querySelector("#gsh-resize-handle");
 
     panelRefs = {
       toggle,
       status,
       logs,
+      countModeButton,
+      targetModeButton,
+      countRow,
       loopInput,
+      targetRow,
+      targetInput,
+      targetProgress,
+      totalTradingVolumeValue,
+      totalTradingVolumeMeta,
+      todayTradingVolumeValue,
+      todayTradingVolumeMeta,
+      statsError,
+      dragHandle,
+      resizeHandle,
       container: panel,
     };
 
+    restorePanelLayout(panel);
+    panelInteractionCleanup = setupPanelInteractions(
+      panel,
+      dragHandle,
+      resizeHandle
+    );
+
     toggle.addEventListener("change", () => {
       if (toggle.checked) {
+        const mode = normalizeRunMode(
+          targetModeButton?.dataset.active === "true"
+            ? RUN_MODE_TARGET
+            : RUN_MODE_COUNT
+        );
         const nextValue = clampLoopCount(loopInput.value);
+        const nextTargetValue = normalizeTargetTodayVolume(targetInput?.value);
         loopInput.value = String(nextValue);
+        if (targetInput) {
+          targetInput.value = nextTargetValue > 0 ? String(nextTargetValue) : "";
+        }
+        if (mode === RUN_MODE_TARGET && nextTargetValue <= 0) {
+          toggle.checked = false;
+          addLog("目标交易量模式需要设置大于0的目标值");
+          return;
+        }
         chrome.storage.local.set({
+          [STORAGE_KEYS.runMode]: mode,
           [STORAGE_KEYS.loopCount]: nextValue,
+          [STORAGE_KEYS.targetTodayVolume]: nextTargetValue,
           [STORAGE_KEYS.enabled]: true,
         });
-        addLog(`已开启，循环次数: ${nextValue}`);
+        addLog(
+          mode === RUN_MODE_TARGET
+            ? `已开启，目标交易量: ${formatUsdDisplay(nextTargetValue)}`
+            : `已开启，循环次数: ${nextValue}`
+        );
       } else {
         chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
         addLog("已关闭");
       }
+    });
+
+    countModeButton?.addEventListener("click", () => {
+      chrome.storage.local.set({ [STORAGE_KEYS.runMode]: RUN_MODE_COUNT });
+      getSettings().then(renderPanel);
+      addLog("已切换到次数模式");
+    });
+
+    targetModeButton?.addEventListener("click", () => {
+      chrome.storage.local.set({ [STORAGE_KEYS.runMode]: RUN_MODE_TARGET });
+      getSettings().then(renderPanel);
+      addLog("已切换到目标交易量模式");
     });
 
     loopInput.addEventListener("change", () => {
@@ -383,10 +1115,24 @@
       chrome.storage.local.set({ [STORAGE_KEYS.loopCount]: nextValue });
     });
 
+    targetInput?.addEventListener("change", () => {
+      const nextValue = normalizeTargetTodayVolume(targetInput.value);
+      targetInput.value = nextValue > 0 ? String(nextValue) : "";
+      chrome.storage.local.set({ [STORAGE_KEYS.targetTodayVolume]: nextValue });
+      addLog(`已设置目标交易量: ${formatUsdDisplay(nextValue)}`);
+    });
+
+    targetInput?.addEventListener("input", () => {
+      const nextValue = normalizeTargetTodayVolume(targetInput.value);
+      chrome.storage.local.set({ [STORAGE_KEYS.targetTodayVolume]: nextValue });
+    });
+
     getSettings().then((settings) => {
       renderPanel(settings);
+      renderPanelStats();
       renderLogs();
     });
+    startPanelStatsRefresh();
   };
 
   const startPanelObserver = () => {
@@ -405,9 +1151,39 @@
   };
 
   const findSelectionButtons = (minCount) => {
-    const buttons = Array.from(
+    const selectorButtons = Array.from(
       document.querySelectorAll(SELECT_BUTTON_SELECTOR)
     ).filter(isVisible);
+    const textButtons = Array.from(
+      document.querySelectorAll("button,[role='button']")
+    )
+      .filter(isVisible)
+      .filter((el) => !panelRefs?.container?.contains(el))
+      .filter((el) => {
+        const label = normalizeText(
+          el.getAttribute("aria-label") ||
+            el.innerText ||
+            el.textContent ||
+            ""
+        );
+        return label === normalizeText(CHOOSE_TEXT);
+      });
+    const buttons = [...selectorButtons, ...textButtons].filter(
+      (button, index, list) => list.indexOf(button) === index
+    );
+    buttons.sort((a, b) => {
+      if (a === b) {
+        return 0;
+      }
+      const position = a.compareDocumentPosition(b);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+        return -1;
+      }
+      if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+        return 1;
+      }
+      return 0;
+    });
     if (buttons.length >= minCount) {
       return buttons;
     }
@@ -441,7 +1217,27 @@
         if (!name) {
           return null;
         }
-        return { element: row, name };
+        const fullText = (row.innerText || "").replace(/\s+/g, " ").trim();
+        const restText = fullText.startsWith(name)
+          ? fullText.slice(name.length).trim()
+          : fullText;
+        const symbolMatch = restText.match(/^[A-Z0-9.-]{2,20}/);
+        const usdValueMatch = fullText.match(/\$[\d,]+(?:\.\d+)?/);
+        const amountMatch = fullText.match(
+          /\$[\d,]+(?:\.\d+)?\s+([\d,]+(?:\.\d+)?)\s+[A-Z0-9.-]{2,20}\b/
+        );
+        const amountText = amountMatch ? amountMatch[1] : "";
+        const amountValue = amountText
+          ? Number.parseFloat(amountText.replace(/,/g, ""))
+          : 0;
+        return {
+          element: row,
+          name,
+          symbol: symbolMatch ? symbolMatch[0] : name,
+          usdValue: usdValueMatch ? usdValueMatch[0] : "",
+          amountText,
+          amountValue: Number.isFinite(amountValue) ? amountValue : 0,
+        };
       })
       .filter(Boolean);
     return list.length ? list : null;
@@ -609,6 +1405,142 @@
     return null;
   };
 
+  const findTokenSearchInput = () => {
+    const root = findOverlayRoot() || document.body;
+    const candidates = Array.from(
+      root.querySelectorAll(
+        "input[type='text'],input[type='search'],input:not([type]),textarea"
+      )
+    ).filter(isVisible);
+
+    const preferred = candidates.find((input) => {
+      const hint = normalizeText(
+        input.getAttribute("placeholder") ||
+          input.getAttribute("aria-label") ||
+          ""
+      );
+      return hint.includes("search");
+    });
+    if (preferred) {
+      return preferred;
+    }
+    return candidates[0] || null;
+  };
+
+  const setNativeInputValue = (input, value) => {
+    if (!input) {
+      return false;
+    }
+    const prototype =
+      input instanceof HTMLTextAreaElement
+        ? window.HTMLTextAreaElement?.prototype
+        : window.HTMLInputElement?.prototype;
+    const descriptor = prototype
+      ? Object.getOwnPropertyDescriptor(prototype, "value")
+      : null;
+    if (descriptor?.set) {
+      descriptor.set.call(input, value);
+    } else {
+      input.value = value;
+    }
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    return true;
+  };
+
+  const typeIntoSearchInput = async (input, value) => {
+    if (!input || !isVisible(input)) {
+      return false;
+    }
+    input.scrollIntoView({ block: "center", inline: "nearest" });
+    if (input.focus) {
+      input.focus();
+    }
+    if (typeof input.select === "function") {
+      input.select();
+    }
+    setNativeInputValue(input, "");
+    await sleep(80);
+    setNativeInputValue(input, value);
+    return true;
+  };
+
+  const pickBestTokenRowCandidate = (node, symbol) => {
+    if (!node) {
+      return null;
+    }
+    const ancestors = [];
+    let current = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    for (let i = 0; i < 8 && current; i += 1) {
+      ancestors.push(current);
+      current = current.parentElement;
+    }
+
+    const exact = ancestors.find((el) => {
+      const text = (el.innerText || "").replace(/\s+/g, " ").trim();
+      return (
+        text.includes(symbol) &&
+        text.length > symbol.length &&
+        text.length < 220 &&
+        !isWithinTabRow(el)
+      );
+    });
+    if (exact && isVisible(exact)) {
+      return exact;
+    }
+
+    const clickable = ancestors
+      .map(resolveClickable)
+      .find(
+        (el) =>
+          el &&
+          isVisible(el) &&
+          !panelRefs?.container?.contains(el) &&
+          !isWithinTabRow(el)
+      );
+    return clickable || null;
+  };
+
+  const findSearchTokenRowBySymbol = (symbol) => {
+    const root = findOverlayRoot() || document.body;
+    const nodes = findElementsByExactText(symbol, root).filter(
+      (node) => !panelRefs?.container?.contains(node)
+    );
+    for (const node of nodes) {
+      const row = pickBestTokenRowCandidate(node, symbol);
+      if (row) {
+        return row;
+      }
+    }
+    return null;
+  };
+
+  const searchTargetToken = async (flow) => {
+    const searchInput = await waitFor(findTokenSearchInput, 3000);
+    if (!searchInput) {
+      logStep(flow, "未找到搜索框");
+      return null;
+    }
+
+    const typed = await typeIntoSearchInput(searchInput, flow.targetSymbol);
+    if (!typed) {
+      logStep(flow, "输入搜索词失败");
+      return null;
+    }
+    logStep(flow, `已输入搜索词: ${flow.targetSymbol}`);
+
+    const targetRow = await waitFor(
+      () => findSearchTokenRowBySymbol(flow.targetSymbol),
+      SEARCH_RESULT_TIMEOUT_MS
+    );
+    if (!targetRow) {
+      logStep(flow, `搜索超时，未找到 ${flow.targetSymbol}`);
+      return null;
+    }
+    logStep(flow, `搜索结果已出现: ${flow.targetSymbol}`);
+    return targetRow;
+  };
+
   const findChainMenuRoot = (rowEl) => {
     const searchRoot = document.body;
     const xpath = `.//*[contains(normalize-space(.), '${CHAIN_MENU_HINTS[0]}') and contains(normalize-space(.), '${CHAIN_MENU_HINTS[1]}')]`;
@@ -692,7 +1624,9 @@
   };
 
   const findConfirmButton = () => {
-    const nodes = findElementsByExactText(CONFIRM_TEXT, document.body);
+    const nodes = CONFIRM_TEXTS.flatMap((text) =>
+      findElementsByExactText(text, document.body)
+    );
     const candidates = nodes
       .map(resolveClickable)
       .filter(Boolean)
@@ -703,6 +1637,91 @@
     }
     const button = candidates.find((el) => el.tagName === "BUTTON");
     return button || candidates[0];
+  };
+
+  const isDisabledControl = (el) => {
+    if (!el) {
+      return true;
+    }
+    if ("disabled" in el && el.disabled) {
+      return true;
+    }
+    const ariaDisabled = el.getAttribute("aria-disabled");
+    if (ariaDisabled === "true") {
+      return true;
+    }
+    return el.hasAttribute("disabled");
+  };
+
+  const parseNumericValue = (value) => {
+    const normalized = String(value || "")
+      .replace(/,/g, "")
+      .trim();
+    const match = normalized.match(/-?\d+(?:\.\d+)?/);
+    if (!match) {
+      return 0;
+    }
+    const parsed = Number.parseFloat(match[0]);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
+  const findTradeAmountInputs = () => {
+    const overlay = findOverlayRoot();
+    return Array.from(document.querySelectorAll("input"))
+      .filter(isVisible)
+      .filter((el) => !panelRefs?.container?.contains(el))
+      .filter((el) => !overlay || !overlay.contains(el))
+      .filter((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 80) {
+          return false;
+        }
+        const type = (el.getAttribute("type") || "text").toLowerCase();
+        return ["", "text", "number", "search", "tel"].includes(type);
+      })
+      .sort((a, b) => {
+        if (a === b) {
+          return 0;
+        }
+        const position = a.compareDocumentPosition(b);
+        if (position & Node.DOCUMENT_POSITION_FOLLOWING) {
+          return -1;
+        }
+        if (position & Node.DOCUMENT_POSITION_PRECEDING) {
+          return 1;
+        }
+        return 0;
+      });
+  };
+
+  const getSwapQuoteState = () => {
+    const inputs = findTradeAmountInputs();
+    const sourceInput = inputs.find((el) => !el.disabled && !el.readOnly) || null;
+    const targetInput = inputs.find((el) => el !== sourceInput) || null;
+    const confirmButton = findConfirmButton();
+    return {
+      sourceAmount: parseNumericValue(sourceInput?.value),
+      targetAmount: parseNumericValue(targetInput?.value),
+      hasQuoteSummary:
+        hasTextVisible("Simulations", document.body) &&
+        hasTextVisible("Total Fee", document.body),
+      confirmReady: Boolean(
+        confirmButton && !isDisabledControl(confirmButton)
+      ),
+    };
+  };
+
+  const hasQuoteProgress = (beforeState, nextState) => {
+    if (!nextState) {
+      return false;
+    }
+    if (nextState.confirmReady || nextState.hasQuoteSummary) {
+      return true;
+    }
+    return (
+      nextState.sourceAmount > beforeState.sourceAmount ||
+      nextState.targetAmount > beforeState.targetAmount
+    );
   };
 
   const findCloseButton = () => {
@@ -735,6 +1754,130 @@
       return fallback;
     }
     return null;
+  };
+
+  const hasTextVisible = (text, root) => {
+    const exactNodes = findElementsByExactText(text, root);
+    if (exactNodes.length) {
+      return true;
+    }
+    return Boolean(findClickableByText(text, root));
+  };
+
+  const includesAllTexts = (node, texts) => {
+    const content = normalizeText(node?.innerText || node?.textContent || "");
+    if (!content) {
+      return false;
+    }
+    return texts.every((text) => content.includes(normalizeText(text)));
+  };
+
+  const pickSmallestContainer = (containers) => {
+    if (!containers.length) {
+      return null;
+    }
+    return containers
+      .map((element) => ({
+        element,
+        area:
+          element.getBoundingClientRect().width *
+          element.getBoundingClientRect().height,
+      }))
+      .sort((a, b) => a.area - b.area)[0].element;
+  };
+
+  const findFeedbackContainer = (anchorTexts, requiredTexts) => {
+    const anchors = anchorTexts.flatMap((text) =>
+      findElementsByExactText(text, document.body)
+    );
+    const candidates = [];
+
+    for (const anchor of anchors) {
+      let current = anchor;
+      for (let depth = 0; depth < 7 && current; depth += 1) {
+        if (
+          current instanceof HTMLElement &&
+          isVisible(current) &&
+          !panelRefs?.container?.contains(current) &&
+          includesAllTexts(current, requiredTexts)
+        ) {
+          const textLength = (current.innerText || "").trim().length;
+          if (textLength > 0 && textLength < 320) {
+            candidates.push(current);
+          }
+        }
+        current = current.parentElement;
+      }
+    }
+
+    return pickSmallestContainer(
+      candidates.filter((element, index, list) => list.indexOf(element) === index)
+    );
+  };
+
+  const findFinalSuccessSignal = () => {
+    const confirmedCard = findFeedbackContainer(
+      [CONFIRMED_TEXT],
+      [CONFIRMED_TEXT, "Swap"]
+    );
+    if (confirmedCard) {
+      return {
+        status: "confirmed",
+        container: confirmedCard,
+        closeButton: findCloseButton(),
+      };
+    }
+
+    const successCard =
+      findFeedbackContainer([SUCCESS_TEXT], [SUCCESS_TEXT]) ||
+      findFeedbackContainer([SWAPPED_TO_TEXT], [SWAPPED_TO_TEXT]);
+    if (successCard) {
+      return {
+        status: "success",
+        container: successCard,
+        closeButton: findCloseButton(),
+      };
+    }
+    return null;
+  };
+
+  const findPendingSignal = () => {
+    const pendingCard = findFeedbackContainer(
+      [PENDING_TEXT],
+      [PENDING_TEXT, "Swap"]
+    );
+    if (pendingCard) {
+      return {
+        status: "pending",
+        container: pendingCard,
+        closeButton: findCloseButton(),
+      };
+    }
+    return null;
+  };
+
+  const findSwapFeedbackSignal = () =>
+    findPendingSignal() || findFinalSuccessSignal();
+
+  const extractFeedbackSwapUsdAmount = (feedback) => {
+    const text = feedback?.container?.innerText || "";
+    return extractFirstUsdValue(text);
+  };
+
+  const isReadyForNextCycle = () => {
+    const overlay = findOverlayRoot();
+    if (
+      overlay &&
+      (hasTextVisible(SUCCESS_TEXT, overlay) ||
+        hasTextVisible(SWAPPED_TO_TEXT, overlay))
+    ) {
+      return null;
+    }
+    const buttons = findSelectionButtons(2);
+    if (!buttons || buttons.length < 2) {
+      return null;
+    }
+    return buttons;
   };
 
   const hoverTokenAndSelectChain = async (rowEl, symbol, chainName) => {
@@ -779,6 +1922,7 @@
       return { flow: null, reason: "failed" };
     }
     clickEl(buttons[0]);
+    addLog("点击选取币种");
     addLog("已点击来源按钮，等待1秒");
     await sleep(WAIT_AFTER_BUTTON_MS);
 
@@ -788,8 +1932,12 @@
       return { flow: null, reason: "failed" };
     }
 
-    addLog("用户目前持有:");
-    rows.forEach((row) => addLog(row.name));
+    addLog(`所有代币项（共${rows.length}项）:`);
+    rows.forEach((row, index) => {
+      addLog(
+        `${index + 1}:${row.symbol}${row.usdValue ? ` ${row.usdValue}` : ""}`
+      );
+    });
 
     const flow = flowOverride || resolveInitialFlow(rows);
     if (!flow) {
@@ -801,8 +1949,8 @@
       addLog(`开始流程: ${flow.label}`);
     }
 
-    const sourceRow = findRowByNames(rows, flow.sourceNames);
-    if (!sourceRow) {
+    const sourceRow = findBestPositiveRowByNames(rows, flow.sourceNames);
+    if (!sourceRow || sourceRow.amountValue <= 0) {
       addLog(`未找到来源代币: ${flow.sourceNames.join("/")}`);
       return { flow: null, reason: "failed" };
     }
@@ -825,36 +1973,41 @@
     }
     const targetButton = buttons[1] || buttons[0];
     clickEl(targetButton);
+    logStep(flow, "点击选取目标币种");
     logStep(flow, "已点击目标按钮，等待1秒");
     await sleep(WAIT_AFTER_BUTTON_MS);
 
-    const savedTab = await waitFor(findSavedTab);
-    if (!savedTab) {
-      logStep(flow, "未找到已保存");
-      return false;
-    }
-    logStep(
-      flow,
-      `已找到已保存(${savedTab.tagName.toLowerCase()}${
-        savedTab.className
-          ? `.${savedTab.className.split(" ").slice(0, 2).join(".")}`
-          : ""
-      })`
-    );
-    savedTab.scrollIntoView({ block: "center", inline: "nearest" });
-    clickEl(savedTab);
-    logStep(flow, "已点击已保存，等待2秒");
-    await sleep(WAIT_AFTER_SAVED_TAB_MS);
-
-    const targetRow = await waitFor(() =>
-      findSavedTokenRowBySymbol(flow.targetSymbol)
-    );
+    let targetRow = await searchTargetToken(flow);
     if (!targetRow) {
-      logStep(flow, `未找到目标代币 ${flow.targetSymbol}`);
-      return false;
+      logStep(flow, "搜索路径失败，回退到已保存");
+      const savedTab = await waitFor(findSavedTab);
+      if (!savedTab) {
+        logStep(flow, "未找到已保存");
+        return false;
+      }
+      logStep(
+        flow,
+        `已找到已保存(${savedTab.tagName.toLowerCase()}${
+          savedTab.className
+            ? `.${savedTab.className.split(" ").slice(0, 2).join(".")}`
+            : ""
+        })`
+      );
+      savedTab.scrollIntoView({ block: "center", inline: "nearest" });
+      clickEl(savedTab);
+      logStep(flow, "已点击已保存，等待2秒");
+      await sleep(WAIT_AFTER_SAVED_TAB_MS);
+
+      targetRow = await waitFor(() =>
+        findSavedTokenRowBySymbol(flow.targetSymbol)
+      );
+      if (!targetRow) {
+        logStep(flow, `未找到目标代币 ${flow.targetSymbol}`);
+        return false;
+      }
     }
 
-    if (flow.targetSymbol === TARGET_SYMBOL_USDT) {
+    if (flow.targetChain) {
       const selected = await hoverTokenAndSelectChain(
         targetRow,
         flow.targetSymbol,
@@ -875,30 +2028,91 @@
       logStep(flow, "未找到MAX按钮");
       return false;
     }
+    const quoteBeforeMax = getSwapQuoteState();
     maxButton.scrollIntoView({ block: "center", inline: "nearest" });
     clickEl(maxButton);
-    logStep(flow, "已点击MAX，等待5秒");
-    await sleep(WAIT_AFTER_MAX_MS);
+    logStep(flow, "已点击MAX，等待金额回填或报价出现");
+
+    const quoteReaction = await waitFor(() => {
+      const state = getSwapQuoteState();
+      if (!hasQuoteProgress(quoteBeforeMax, state)) {
+        return null;
+      }
+      return state;
+    }, WAIT_AFTER_MAX_MS);
+    if (!quoteReaction) {
+      logStep(flow, "点击MAX后，页面长时间未完成金额回填或报价");
+      return false;
+    }
+
+    if (quoteReaction.confirmReady) {
+      logStep(flow, "确认按钮已可点击");
+      return true;
+    }
+
+    logStep(flow, "已检测到金额或报价更新，继续等待确认按钮");
     return true;
   };
 
   const stepFourClickConfirm = async (flow) => {
     logStep(flow, "步骤4：点击确认");
-    const confirmButton = await waitFor(findConfirmButton);
+    logStep(flow, `等待${WAIT_BEFORE_CONFIRM_MS}ms，给页面完成确认按钮渲染`);
+    await sleep(WAIT_BEFORE_CONFIRM_MS);
+
+    const confirmButton = await waitFor(() => {
+      const button = findConfirmButton();
+      if (!button || isDisabledControl(button)) {
+        return null;
+      }
+      return button;
+    });
     if (!confirmButton) {
       logStep(flow, "未找到确认按钮");
       return false;
     }
     confirmButton.scrollIntoView({ block: "center", inline: "nearest" });
     clickEl(confirmButton);
-    logStep(flow, "已点击确认，等待30秒");
-    await sleep(WAIT_AFTER_CONFIRM_MS);
-    return true;
+    logStep(flow, "已点击确认，等待交易反馈");
+
+    const startedAt = Date.now();
+    const feedback = await waitFor(findSwapFeedbackSignal, WAIT_AFTER_CONFIRM_MS);
+    if (!feedback) {
+      logStep(flow, "确认后未检测到成功或待处理提示");
+      return null;
+    }
+    logStep(flow, `检测到反馈状态: ${feedback.status}`);
+    if (feedback.status === "confirmed" || feedback.status === "success") {
+      const swapUsdAmount = extractFeedbackSwapUsdAmount(feedback);
+      if (swapUsdAmount > 0) {
+        logStep(flow, `记录本轮兑换金额: ${formatUsdDisplay(swapUsdAmount)}`);
+      }
+      logStep(flow, "已进入最终成功状态");
+      return { status: feedback.status, swapUsdAmount };
+    }
+
+    logStep(flow, "已出现待处理提示，继续等待Confirmed");
+    const elapsed = Date.now() - startedAt;
+    const remainingTimeout = Math.max(1000, WAIT_AFTER_CONFIRM_MS - elapsed);
+    const finalFeedback = await waitFor(
+      findFinalSuccessSignal,
+      remainingTimeout
+    );
+    if (!finalFeedback) {
+      logStep(flow, "待处理后长时间未进入Confirmed");
+      return null;
+    }
+    logStep(flow, `检测到反馈状态: ${finalFeedback.status}`);
+    const swapUsdAmount = extractFeedbackSwapUsdAmount(finalFeedback);
+    if (swapUsdAmount > 0) {
+      logStep(flow, `记录本轮兑换金额: ${formatUsdDisplay(swapUsdAmount)}`);
+    }
+    logStep(flow, "已进入最终成功状态");
+    return { status: finalFeedback.status, swapUsdAmount };
   };
 
   const stepFiveClickClose = async (flow) => {
     logStep(flow, "步骤5：点击Close");
-    const closeButton = await waitFor(findCloseButton);
+    const closeButton = await waitFor(findCloseButton, WAIT_AFTER_CONFIRM_MS);
     if (!closeButton) {
       logStep(flow, "未找到Close按钮");
       return false;
@@ -906,6 +2120,17 @@
     closeButton.scrollIntoView({ block: "center", inline: "nearest" });
     clickEl(closeButton);
     logStep(flow, "已点击Close");
+    return true;
+  };
+
+  const stepSixWaitForNextCycle = async (flow) => {
+    logStep(flow, "步骤6：等待页面回到下一轮可执行状态");
+    const ready = await waitFor(isReadyForNextCycle, 10000);
+    if (!ready) {
+      logStep(flow, "页面未回到可执行状态");
+      return false;
+    }
+    logStep(flow, "已回到下一轮可执行状态");
     return true;
   };
 
@@ -922,27 +2147,35 @@
     if (!maxClicked) {
       return { status: "failed" };
     }
-    const confirmed = await stepFourClickConfirm(flow);
-    if (!confirmed) {
+    const confirmResult = await stepFourClickConfirm(flow);
+    if (!confirmResult) {
       return { status: "failed" };
     }
     const closed = await stepFiveClickClose(flow);
     if (!closed) {
       return { status: "failed" };
     }
+    const ready = await stepSixWaitForNextCycle(flow);
+    if (!ready) {
+      return { status: "failed" };
+    }
     await incrementCount();
-    return { status: "ok", flow };
+    return {
+      status: "ok",
+      flow,
+      swapUsdAmount: confirmResult.swapUsdAmount || 0,
+    };
   };
 
   const runSwapCycle = async () => {
     const result = await runSingleSwap(null);
     if (result?.status === "ok") {
-      return "ok";
+      return result;
     }
     if (result?.status === "no_source") {
-      return "no_source";
+      return { status: "no_source" };
     }
-    return "failed";
+    return { status: "failed" };
   };
 
   const refreshAfterNoSource = async () => {
@@ -960,15 +2193,56 @@
     return true;
   };
 
+  const waitBetweenCycles = async () => {
+    const delayMs = randomBetween(
+      WAIT_BETWEEN_CYCLES_MIN_MS,
+      WAIT_BETWEEN_CYCLES_MAX_MS
+    );
+    addLog(`随机等待 ${(delayMs / 1000).toFixed(1)} 秒后进入下一轮`);
+    await sleep(delayMs);
+  };
+
+  const getTodayTradingVolumeValue = () =>
+    Number.isFinite(panelStatsState.todayTradingVolume)
+      ? panelStatsState.todayTradingVolume
+      : 0;
+
+  const hasReachedTargetTodayVolume = (currentTodayVolume, targetTodayVolume) =>
+    currentTodayVolume >= targetTodayVolume;
+
+  const refreshTargetModeProgress = async (targetTodayVolume, phase) => {
+    await refreshPanelStats();
+    const current = getTodayTradingVolumeValue();
+    addLog(
+      `${phase}，今日交易量 ${formatUsdDisplay(current)} / 目标 ${formatUsdDisplay(
+        targetTodayVolume
+      )}`
+    );
+    if (hasReachedTargetTodayVolume(current, targetTodayVolume)) {
+      addLog(`今日交易量已达到目标，停止执行`);
+      return { reached: true, currentTodayVolume: current };
+    }
+    return { reached: false, currentTodayVolume: current };
+  };
+
   const runSwapLoop = async () => {
     if (running) {
       addLog("当前正在执行，忽略重复开始");
       return;
     }
-    const { loopCount } = await getSettings();
-    const total = clampLoopCount(loopCount);
-    if (!total || total < 1) {
+    const settings = await getSettings();
+    const runMode = normalizeRunMode(settings.runMode);
+    const total = clampLoopCount(settings.loopCount);
+    const targetTodayVolume = normalizeTargetTodayVolume(
+      settings.targetTodayVolume
+    );
+    if (runMode === RUN_MODE_COUNT && (!total || total < 1)) {
       addLog("请输入有效的循环次数");
+      setEnabled(false);
+      return;
+    }
+    if (runMode === RUN_MODE_TARGET && targetTodayVolume <= 0) {
+      addLog("目标交易量模式需要设置大于0的目标值");
       setEnabled(false);
       return;
     }
@@ -976,24 +2250,91 @@
     running = true;
     stopRequested = false;
     try {
-      addLog(`开始循环，总次数: ${total}`);
+      let baseTodayVolume = 0;
+      let localAccumulatedVolume = 0;
+      if (runMode === RUN_MODE_TARGET) {
+        addLog(`开始目标交易量模式，目标值: ${formatUsdDisplay(targetTodayVolume)}`);
+        const targetCheck = await refreshTargetModeProgress(
+          targetTodayVolume,
+          "启动前检查"
+        );
+        baseTodayVolume = targetCheck.currentTodayVolume || 0;
+        if (targetCheck.reached) {
+          return;
+        }
+      } else {
+        addLog(`开始循环，总次数: ${total}`);
+      }
       let completed = 0;
-      while (completed < total) {
+      while (runMode === RUN_MODE_TARGET || completed < total) {
         if (stopRequested) {
           addLog("已停止循环");
           break;
         }
-        addLog(`开始第${completed + 1}/${total}次`);
+        addLog(
+          runMode === RUN_MODE_TARGET
+            ? `开始第${completed + 1}次（目标交易量模式）`
+            : `开始第${completed + 1}/${total}次`
+        );
         const result = await runSwapCycle();
-        if (result === "no_source") {
+        if (result.status === "no_source") {
           await refreshAfterNoSource();
           continue;
         }
-        if (result !== "ok") {
+        if (result.status !== "ok") {
           addLog("本次失败，停止循环");
           break;
         }
         completed += 1;
+        if (runMode === RUN_MODE_TARGET) {
+          const swapUsdAmount = result.swapUsdAmount || 0;
+          if (swapUsdAmount <= 0) {
+            addLog("本轮未解析到兑换金额，刷新真实今日交易量重新校准");
+            const targetCheck = await refreshTargetModeProgress(
+              targetTodayVolume,
+              "金额缺失后校验"
+            );
+            baseTodayVolume = targetCheck.currentTodayVolume || baseTodayVolume;
+            localAccumulatedVolume = 0;
+            if (targetCheck.reached) {
+              break;
+            }
+            if (
+              (runMode === RUN_MODE_COUNT && completed < total) ||
+              runMode === RUN_MODE_TARGET
+            ) {
+              await waitBetweenCycles();
+            }
+            continue;
+          }
+          localAccumulatedVolume += swapUsdAmount;
+          const estimatedTodayVolume = baseTodayVolume + localAccumulatedVolume;
+          addLog(
+            `本地累计兑换金额 ${formatUsdDisplay(
+              localAccumulatedVolume
+            )}，估算今日交易量 ${formatUsdDisplay(
+              estimatedTodayVolume
+            )} / 目标 ${formatUsdDisplay(targetTodayVolume)}`
+          );
+          if (hasReachedTargetTodayVolume(estimatedTodayVolume, targetTodayVolume)) {
+            addLog("本地估算已达到目标，刷新真实今日交易量校验");
+            const targetCheck = await refreshTargetModeProgress(
+              targetTodayVolume,
+              "真实值校验"
+            );
+            baseTodayVolume = targetCheck.currentTodayVolume || baseTodayVolume;
+            localAccumulatedVolume = 0;
+            if (targetCheck.reached) {
+              break;
+            }
+          }
+        }
+        if (
+          (runMode === RUN_MODE_COUNT && completed < total) ||
+          runMode === RUN_MODE_TARGET
+        ) {
+          await waitBetweenCycles();
+        }
       }
     } finally {
       running = false;
@@ -1030,6 +2371,12 @@
       shouldRender = true;
     }
     if (STORAGE_KEYS.loopCount in changes) {
+      shouldRender = true;
+    }
+    if (STORAGE_KEYS.runMode in changes) {
+      shouldRender = true;
+    }
+    if (STORAGE_KEYS.targetTodayVolume in changes) {
       shouldRender = true;
     }
     if (shouldRender) {

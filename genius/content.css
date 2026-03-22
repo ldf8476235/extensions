@@ -1,9 +1,16 @@
 #genius-swap-panel {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  left: 18px;
+  top: 18px;
   width: 240px;
+  min-width: 220px;
+  min-height: 260px;
+  max-width: min(420px, calc(100vw - 24px));
+  max-height: calc(100vh - 24px);
   z-index: 2147483647;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   font-family: "Space Grotesk", "Sora", "Archivo", "Avenir Next", sans-serif;
   color: #0f172a;
   background:
@@ -12,12 +19,23 @@
   border-radius: 16px;
   border: 1px solid rgba(15, 23, 42, 0.12);
   box-shadow: 0 20px 40px rgba(15, 23, 42, 0.25);
-  padding: 12px;
+  padding: 12px 12px 16px;
   animation: gsh-pop 240ms ease-out;
+  transition: box-shadow 160ms ease;
 }
 
 #genius-swap-panel * {
   box-sizing: border-box;
+}
+
+#genius-swap-panel.is-dragging,
+#genius-swap-panel.is-resizing {
+  box-shadow: 0 26px 56px rgba(15, 23, 42, 0.34);
+}
+
+.gsh-panel-interacting,
+.gsh-panel-interacting body {
+  user-select: none;
 }
 
 #genius-swap-panel .gsh-header {
@@ -26,12 +44,47 @@
   justify-content: space-between;
   gap: 10px;
   margin-bottom: 10px;
+  flex: none;
+}
+
+#genius-swap-panel .gsh-drag-handle {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+#genius-swap-panel.is-dragging .gsh-drag-handle {
+  cursor: grabbing;
+}
+
+#genius-swap-panel .gsh-drag-handle:focus-visible {
+  outline: 2px solid rgba(14, 165, 233, 0.45);
+  outline-offset: 4px;
+  border-radius: 10px;
+}
+
+#genius-swap-panel .gsh-drag-grip {
+  width: 14px;
+  height: 28px;
+  flex: none;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, rgba(15, 23, 42, 0.45) 28%, transparent 32%) center / 4px 8px repeat-y;
+  opacity: 0.9;
 }
 
 #genius-swap-panel .gsh-title {
   font-size: 14px;
   font-weight: 700;
   letter-spacing: 0.2px;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+  text-shadow: none !important;
 }
 
 #genius-swap-panel .gsh-subtitle {
@@ -50,11 +103,13 @@
   background: rgba(15, 23, 42, 0.1);
   color: #0f172a;
   transition: all 180ms ease;
+  flex: none;
 }
 
 #genius-swap-panel .gsh-status[data-state="on"] {
-  background: rgba(14, 165, 233, 0.2);
-  color: #075985;
+  background: rgba(14, 165, 233, 0.26);
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
 }
 
 #genius-swap-panel .gsh-row {
@@ -64,6 +119,11 @@
   gap: 10px;
   padding: 8px 0;
   border-top: 1px solid rgba(15, 23, 42, 0.08);
+  flex: none;
+}
+
+#genius-swap-panel .gsh-row[hidden] {
+  display: none !important;
 }
 
 #genius-swap-panel .gsh-row:first-of-type {
@@ -73,18 +133,23 @@
 #genius-swap-panel .gsh-label {
   font-size: 12px;
   font-weight: 600;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+  text-shadow: none !important;
 }
 
 #genius-swap-panel .gsh-hint {
   font-size: 10px;
-  color: #64748b;
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
   margin-top: 2px;
 }
 
 #genius-swap-panel .gsh-count {
   font-size: 16px;
   font-weight: 700;
-  color: #0c4a6e;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
 }
 
 #genius-swap-panel .gsh-input {
@@ -104,6 +169,40 @@
   outline-offset: 2px;
 }
 
+#genius-swap-panel .gsh-mode-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.06);
+}
+
+#genius-swap-panel .gsh-mode-btn {
+  min-height: 28px;
+  padding: 0 8px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+#genius-swap-panel .gsh-mode-btn[data-active="true"] {
+  background: rgba(14, 165, 233, 0.18);
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+}
+
+#genius-swap-panel .gsh-mode-btn:focus-visible {
+  outline: 2px solid rgba(14, 165, 233, 0.45);
+  outline-offset: 2px;
+}
+
 #genius-swap-panel .gsh-stats {
   margin-top: 8px;
   padding-top: 8px;
@@ -114,7 +213,8 @@
   font-size: 11px;
   font-weight: 600;
   margin-bottom: 6px;
-  color: #0f172a;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
 }
 
 #genius-swap-panel .gsh-stats-grid {
@@ -131,37 +231,54 @@
 
 #genius-swap-panel .gsh-stat-label {
   font-size: 10px;
-  color: #64748b;
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
   margin-bottom: 2px;
 }
 
 #genius-swap-panel .gsh-stat-value {
   font-size: 12px;
   font-weight: 700;
-  color: #0c4a6e;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
+}
+
+#genius-swap-panel .gsh-stat-meta {
+  margin-top: 4px;
+  font-size: 10px;
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
 }
 
 #genius-swap-panel .gsh-stats-error {
   margin-top: 6px;
   font-size: 10px;
-  color: #b91c1c;
+  color: #b91c1c !important;
+  -webkit-text-fill-color: #b91c1c !important;
 }
 
 #genius-swap-panel .gsh-log {
   margin-top: 8px;
   padding-top: 8px;
+  padding-bottom: 10px;
   border-top: 1px solid rgba(15, 23, 42, 0.08);
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 #genius-swap-panel .gsh-log-title {
   font-size: 11px;
   font-weight: 600;
   margin-bottom: 6px;
-  color: #0f172a;
+  color: #0f172a !important;
+  -webkit-text-fill-color: #0f172a !important;
 }
 
 #genius-swap-panel .gsh-log-list {
-  max-height: 130px;
+  flex: 1;
+  min-height: 90px;
   overflow-y: auto;
   font-size: 10px;
   line-height: 1.4;
@@ -221,6 +338,24 @@
 
 #genius-swap-panel .gsh-switch input:checked + .gsh-slider::before {
   transform: translateX(20px);
+}
+
+#genius-swap-panel .gsh-resize-handle {
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, transparent 0 40%, rgba(15, 23, 42, 0.12) 40% 48%, transparent 48% 58%, rgba(15, 23, 42, 0.18) 58% 66%, transparent 66%);
+  cursor: nwse-resize;
+  touch-action: none;
+  opacity: 0.85;
+}
+
+#genius-swap-panel.is-resizing .gsh-resize-handle {
+  opacity: 1;
 }
 
 @keyframes gsh-pop {

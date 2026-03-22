@@ -6,7 +6,10 @@
   "permissions": ["storage"],
   "content_scripts": [
     {
-      "matches": ["https://www.tradegenius.com/zh/trade*"],
+      "matches": [
+        "https://www.tradegenius.com/trade*",
+        "https://www.tradegenius.com/*/trade*"
+      ],
       "js": ["content.js"],
       "css": ["content.css"],
       "run_at": "document_idle"
