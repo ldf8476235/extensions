@@ -5,6 +5,7 @@
     loopCount: "geniusSwapLoopCount",
     runMode: "geniusSwapRunMode",
     targetTodayVolume: "geniusSwapTargetTodayVolume",
+    usdtTargetSymbol: "geniusSwapUsdtTargetSymbol",
     recoveryState: "geniusSwapRecoveryState",
   };
 
@@ -41,6 +42,7 @@
   const KOGE_SOURCE_NAMES = ["BNB48 Club Token", "KOGE"];
   const TARGET_SYMBOL_USDT = "USDT";
   const TARGET_SYMBOL_USDC = "USDC";
+  const TARGET_SYMBOL_KOGE = "KOGE";
   const TARGET_CHAIN_NAME = "BNB";
   const CHOOSE_TEXT = "Choose";
   const SAVED_TAB_TEXT = "已保存";
@@ -56,8 +58,8 @@
     "button,[role='button'],[role='option'],[role='tab'],[data-state],a,div.cursor-pointer,li";
   const CHAIN_MENU_HINTS = ["Solana", "BNB"];
 
-  const FLOW_BNB48_TO_USDT = {
-    label: "BNB48->USDT",
+  const FLOW_KOGE_TO_USDT = {
+    label: "KOGE->USDT",
     sourceNames: KOGE_SOURCE_NAMES,
     targetSymbol: TARGET_SYMBOL_USDT,
     targetChain: TARGET_CHAIN_NAME,
@@ -73,6 +75,12 @@
     sourceNames: USDC_SOURCE_NAMES,
     targetSymbol: TARGET_SYMBOL_USDT,
     targetChain: TARGET_CHAIN_NAME,
+  };
+  const FLOW_USDT_TO_KOGE = {
+    label: "USDT->KOGE",
+    sourceNames: USDT_SOURCE_NAMES,
+    targetSymbol: TARGET_SYMBOL_KOGE,
+    targetChain: "",
   };
 
   const SELECT_BUTTON_SELECTOR =
@@ -240,6 +248,7 @@
           loopCount: 1,
           runMode: RUN_MODE_COUNT,
           targetTodayVolume: 0,
+          usdtTargetSymbol: TARGET_SYMBOL_USDC,
         });
         return;
       }
@@ -250,6 +259,7 @@
           [STORAGE_KEYS.loopCount]: 1,
           [STORAGE_KEYS.runMode]: RUN_MODE_COUNT,
           [STORAGE_KEYS.targetTodayVolume]: 0,
+          [STORAGE_KEYS.usdtTargetSymbol]: TARGET_SYMBOL_USDC,
         },
         (result) => {
           resolve({
@@ -259,6 +269,9 @@
             runMode: normalizeRunMode(result[STORAGE_KEYS.runMode]),
             targetTodayVolume: normalizeTargetTodayVolume(
               result[STORAGE_KEYS.targetTodayVolume]
+            ),
+            usdtTargetSymbol: normalizeUsdtTargetSymbol(
+              result[STORAGE_KEYS.usdtTargetSymbol]
             ),
           });
         }
@@ -631,16 +644,26 @@
     return Math.min(parsed, 999999999);
   };
 
+  const normalizeUsdtTargetSymbol = (value) =>
+    value === TARGET_SYMBOL_KOGE ? TARGET_SYMBOL_KOGE : TARGET_SYMBOL_USDC;
+
+  const getUsdtForwardFlow = (usdtTargetSymbol) =>
+    normalizeUsdtTargetSymbol(usdtTargetSymbol) === TARGET_SYMBOL_KOGE
+      ? FLOW_USDT_TO_KOGE
+      : FLOW_USDT_TO_USDC;
+
   const createRecoveryState = ({
     runMode,
     remainingCount = 0,
     targetTodayVolume = 0,
+    usdtTargetSymbol = TARGET_SYMBOL_USDC,
     attempt = 1,
     reason = "unknown_error",
   }) => ({
     runMode: normalizeRunMode(runMode),
     remainingCount: clampLoopCount(remainingCount || 1),
     targetTodayVolume: normalizeTargetTodayVolume(targetTodayVolume),
+    usdtTargetSymbol: normalizeUsdtTargetSymbol(usdtTargetSymbol),
     attempt: Math.max(1, Number(attempt) || 1),
     reason,
     savedAt: Date.now(),
@@ -653,11 +676,15 @@
     chrome.storage.local.set({ [STORAGE_KEYS.enabled]: Boolean(value) });
   };
 
-  const resolveInitialFlow = (rows) => {
+  const resolveInitialFlow = (
+    rows,
+    usdtTargetSymbol = TARGET_SYMBOL_USDC
+  ) => {
+    const usdtForwardFlow = getUsdtForwardFlow(usdtTargetSymbol);
     const availableFlows = [
-      FLOW_USDT_TO_USDC,
+      usdtForwardFlow,
       FLOW_USDC_TO_USDT,
-      FLOW_BNB48_TO_USDT,
+      FLOW_KOGE_TO_USDT,
     ]
       .map((flow) => {
         const row = findBestPositiveRowByNames(rows, flow.sourceNames);
@@ -678,25 +705,25 @@
     }
 
     const hasUsdt = rows.some((row) =>
-      matchesAny(row.name, FLOW_USDT_TO_USDC.sourceNames)
+      matchesAny(row.name, usdtForwardFlow.sourceNames)
     );
     const hasUsdc = rows.some((row) =>
       matchesAny(row.name, FLOW_USDC_TO_USDT.sourceNames)
     );
     const hasKoge = rows.some((row) =>
-      matchesAny(row.name, FLOW_BNB48_TO_USDT.sourceNames)
+      matchesAny(row.name, FLOW_KOGE_TO_USDT.sourceNames)
     );
     if (hasUsdt || hasUsdc || hasKoge) {
       addLog("检测到候选代币，但可用数量为0，无法执行自动切换");
       return null;
     }
 
-    addLog("未检测到USDT、USDC或BNB48，无法选择来源代币");
+    addLog("未检测到USDT、USDC或KOGE，无法选择来源代币");
     return null;
   };
 
   const resolveFinalUsdtSettlementFlow = (rows) => {
-    const candidates = [FLOW_USDC_TO_USDT, FLOW_BNB48_TO_USDT]
+    const candidates = [FLOW_USDC_TO_USDT, FLOW_KOGE_TO_USDT]
       .map((flow) => {
         const row = findBestPositiveRowByNames(rows, flow.sourceNames);
         if (!row || row.amountValue <= 0) {
@@ -714,6 +741,7 @@
     loopCount,
     runMode = RUN_MODE_COUNT,
     targetTodayVolume = 0,
+    usdtTargetSymbol = TARGET_SYMBOL_USDC,
   }) => {
     if (!panelRefs) {
       return;
@@ -728,6 +756,28 @@
     if (panelRefs.targetInput) {
       panelRefs.targetInput.value =
         targetTodayVolume > 0 ? String(targetTodayVolume) : "";
+    }
+    if (panelRefs.usdcPairButton) {
+      panelRefs.usdcPairButton.dataset.active = String(
+        normalizeUsdtTargetSymbol(usdtTargetSymbol) === TARGET_SYMBOL_USDC
+      );
+      panelRefs.usdcPairButton.setAttribute(
+        "aria-pressed",
+        String(
+          normalizeUsdtTargetSymbol(usdtTargetSymbol) === TARGET_SYMBOL_USDC
+        )
+      );
+    }
+    if (panelRefs.kogePairButton) {
+      panelRefs.kogePairButton.dataset.active = String(
+        normalizeUsdtTargetSymbol(usdtTargetSymbol) === TARGET_SYMBOL_KOGE
+      );
+      panelRefs.kogePairButton.setAttribute(
+        "aria-pressed",
+        String(
+          normalizeUsdtTargetSymbol(usdtTargetSymbol) === TARGET_SYMBOL_KOGE
+        )
+      );
     }
     if (panelRefs.countRow) {
       panelRefs.countRow.hidden = mode !== RUN_MODE_COUNT;
@@ -1039,6 +1089,16 @@
           <button class="gsh-mode-btn" id="gsh-mode-target" type="button">目标交易量</button>
         </div>
       </div>
+      <div class="gsh-row">
+        <div>
+          <div class="gsh-label">USDT目标币种</div>
+          <div class="gsh-hint">选择 USDT 兑换去向</div>
+        </div>
+        <div class="gsh-mode-group" role="group" aria-label="USDT目标币种">
+          <button class="gsh-mode-btn" id="gsh-pair-usdc" type="button">USDC</button>
+          <button class="gsh-mode-btn" id="gsh-pair-koge" type="button">KOGE</button>
+        </div>
+      </div>
       <div class="gsh-row" id="gsh-count-row">
         <div>
           <div class="gsh-label">次数</div>
@@ -1081,6 +1141,8 @@
     const logs = panel.querySelector("#gsh-log-list");
     const countModeButton = panel.querySelector("#gsh-mode-count");
     const targetModeButton = panel.querySelector("#gsh-mode-target");
+    const usdcPairButton = panel.querySelector("#gsh-pair-usdc");
+    const kogePairButton = panel.querySelector("#gsh-pair-koge");
     const countRow = panel.querySelector("#gsh-count-row");
     const loopInput = panel.querySelector("#gsh-loop-count");
     const targetRow = panel.querySelector("#gsh-target-row");
@@ -1108,6 +1170,8 @@
       logs,
       countModeButton,
       targetModeButton,
+      usdcPairButton,
+      kogePairButton,
       countRow,
       loopInput,
       targetRow,
@@ -1132,6 +1196,11 @@
 
     toggle.addEventListener("change", () => {
       if (toggle.checked) {
+        const usdtTargetSymbol = normalizeUsdtTargetSymbol(
+          kogePairButton?.dataset.active === "true"
+            ? TARGET_SYMBOL_KOGE
+            : TARGET_SYMBOL_USDC
+        );
         const mode = normalizeRunMode(
           targetModeButton?.dataset.active === "true"
             ? RUN_MODE_TARGET
@@ -1152,12 +1221,13 @@
           [STORAGE_KEYS.runMode]: mode,
           [STORAGE_KEYS.loopCount]: nextValue,
           [STORAGE_KEYS.targetTodayVolume]: nextTargetValue,
+          [STORAGE_KEYS.usdtTargetSymbol]: usdtTargetSymbol,
           [STORAGE_KEYS.enabled]: true,
         });
         addLog(
           mode === RUN_MODE_TARGET
-            ? `已开启，目标交易量: ${formatUsdDisplay(nextTargetValue)}`
-            : `已开启，循环次数: ${nextValue}`
+            ? `已开启，目标交易量: ${formatUsdDisplay(nextTargetValue)}，USDT->${usdtTargetSymbol}`
+            : `已开启，循环次数: ${nextValue}，USDT->${usdtTargetSymbol}`
         );
       } else {
         chrome.storage.local.set({ [STORAGE_KEYS.enabled]: false });
@@ -1175,6 +1245,22 @@
       chrome.storage.local.set({ [STORAGE_KEYS.runMode]: RUN_MODE_TARGET });
       getSettings().then(renderPanel);
       addLog("已切换到目标交易量模式");
+    });
+
+    usdcPairButton?.addEventListener("click", () => {
+      chrome.storage.local.set({
+        [STORAGE_KEYS.usdtTargetSymbol]: TARGET_SYMBOL_USDC,
+      });
+      getSettings().then(renderPanel);
+      addLog("已切换 USDT 目标币种为 USDC");
+    });
+
+    kogePairButton?.addEventListener("click", () => {
+      chrome.storage.local.set({
+        [STORAGE_KEYS.usdtTargetSymbol]: TARGET_SYMBOL_KOGE,
+      });
+      getSettings().then(renderPanel);
+      addLog("已切换 USDT 目标币种为 KOGE");
     });
 
     loopInput.addEventListener("change", () => {
@@ -2003,7 +2089,10 @@
     return !findOverlayRoot();
   };
 
-  const stepOneSelectToken = async (flowOverride) => {
+  const stepOneSelectToken = async (
+    flowOverride,
+    usdtTargetSymbol = TARGET_SYMBOL_USDC
+  ) => {
     addLog("步骤1：等待来源代币选择按钮出现");
     const buttons = await waitFor(() => findSelectionButtons(1));
     if (!buttons) {
@@ -2028,7 +2117,7 @@
       );
     });
 
-    const flow = flowOverride || resolveInitialFlow(rows);
+    const flow = flowOverride || resolveInitialFlow(rows, usdtTargetSymbol);
     if (!flow) {
       return { flow: null, reason: "no_source" };
     }
@@ -2224,7 +2313,10 @@
   };
 
   const runSingleSwap = async (flowOverride, options = {}) => {
-    const { flow, reason } = await stepOneSelectToken(flowOverride);
+    const { flow, reason } = await stepOneSelectToken(
+      flowOverride,
+      options.usdtTargetSymbol
+    );
     if (!flow) {
       return { status: reason === "no_source" ? "no_source" : "failed" };
     }
@@ -2258,8 +2350,8 @@
     };
   };
 
-  const runSwapCycle = async () => {
-    const result = await runSingleSwap(null);
+  const runSwapCycle = async (options = {}) => {
+    const result = await runSingleSwap(null, options);
     if (result?.status === "ok") {
       return result;
     }
@@ -2294,6 +2386,7 @@
     runMode,
     remainingCount,
     targetTodayVolume,
+    usdtTargetSymbol,
     attempt,
     reason,
   }) => {
@@ -2301,6 +2394,7 @@
       runMode,
       remainingCount,
       targetTodayVolume,
+      usdtTargetSymbol,
       attempt,
       reason,
     });
@@ -2311,6 +2405,7 @@
           ? recoveryState.remainingCount
           : 1,
       [STORAGE_KEYS.targetTodayVolume]: recoveryState.targetTodayVolume,
+      [STORAGE_KEYS.usdtTargetSymbol]: recoveryState.usdtTargetSymbol,
       [STORAGE_KEYS.enabled]: false,
       [STORAGE_KEYS.recoveryState]: recoveryState,
     });
@@ -2322,6 +2417,7 @@
     total,
     completed,
     targetTodayVolume,
+    usdtTargetSymbol,
   }) => {
     const previousRecovery = await readRecoveryState();
     const nextAttempt = (previousRecovery?.attempt || 0) + 1;
@@ -2343,6 +2439,7 @@
       runMode,
       remainingCount,
       targetTodayVolume,
+      usdtTargetSymbol,
       attempt: nextAttempt,
       reason: "unknown_error",
     });
@@ -2453,6 +2550,9 @@
     const targetTodayVolume = normalizeTargetTodayVolume(
       settings.targetTodayVolume
     );
+    const usdtTargetSymbol = normalizeUsdtTargetSymbol(
+      settings.usdtTargetSymbol
+    );
     if (runMode === RUN_MODE_COUNT && (!total || total < 1)) {
       addLog("请输入有效的循环次数");
       setEnabled(false);
@@ -2496,7 +2596,8 @@
             ? `开始第${completed + 1}次（目标交易量模式）`
             : `开始第${completed + 1}/${total}次`
         );
-        const result = await runSwapCycle();
+        const cycleOptions = { usdtTargetSymbol };
+        const result = await runSwapCycle(cycleOptions);
         if (result.status === "no_source") {
           await refreshAfterNoSource();
           continue;
@@ -2509,6 +2610,7 @@
             total,
             completed,
             targetTodayVolume,
+            usdtTargetSymbol,
           });
           if (reloading) {
             endReason = "reloading";
@@ -2599,6 +2701,9 @@
             loopCount: clampLoopCount(recovery.remainingCount),
             runMode: RUN_MODE_COUNT,
             targetTodayVolume: 0,
+            usdtTargetSymbol: normalizeUsdtTargetSymbol(
+              recovery.usdtTargetSymbol
+            ),
           }
         : {
             enabled: true,
@@ -2606,6 +2711,9 @@
             runMode: RUN_MODE_TARGET,
             targetTodayVolume: normalizeTargetTodayVolume(
               recovery.targetTodayVolume
+            ),
+            usdtTargetSymbol: normalizeUsdtTargetSymbol(
+              recovery.usdtTargetSymbol
             ),
           };
     renderPanel(resumedSettings);
