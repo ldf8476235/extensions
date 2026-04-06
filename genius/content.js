@@ -5,6 +5,7 @@
     loopCount: "geniusSwapLoopCount",
     runMode: "geniusSwapRunMode",
     targetTodayVolume: "geniusSwapTargetTodayVolume",
+    recoveryState: "geniusSwapRecoveryState",
   };
 
   const PANEL_ID = "genius-swap-panel";
@@ -33,6 +34,8 @@
   const PANEL_STATS_REFRESH_INTERVAL_MS = 60000;
   const RUN_MODE_COUNT = "count";
   const RUN_MODE_TARGET = "target";
+  const POST_RUN_SETTLE_WAIT_MS = 5000;
+  const UNKNOWN_ERROR_REFRESH_MAX_ATTEMPTS = 3;
   const USDT_SOURCE_NAMES = ["Tether USD", "USDT"];
   const USDC_SOURCE_NAMES = ["USD Coin", "USDC"];
   const KOGE_SOURCE_NAMES = ["BNB48 Club Token", "KOGE"];
@@ -262,12 +265,54 @@
       );
     });
 
+  const storageGet = (defaults) =>
+    new Promise((resolve) => {
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        resolve(defaults || {});
+        return;
+      }
+      chrome.storage.local.get(defaults || {}, (result) => resolve(result));
+    });
+
+  const storageSet = (values) =>
+    new Promise((resolve) => {
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        resolve();
+        return;
+      }
+      chrome.storage.local.set(values, () => resolve());
+    });
+
+  const storageRemove = (keys) =>
+    new Promise((resolve) => {
+      if (!chrome || !chrome.storage || !chrome.storage.local) {
+        resolve();
+        return;
+      }
+      chrome.storage.local.remove(keys, () => resolve());
+    });
+
   const incrementCount = async () => {
     if (!chrome || !chrome.storage || !chrome.storage.local) {
       return;
     }
     const { count } = await getSettings();
     chrome.storage.local.set({ [STORAGE_KEYS.count]: count + 1 });
+  };
+
+  const readRecoveryState = async () => {
+    const result = await storageGet({
+      [STORAGE_KEYS.recoveryState]: null,
+    });
+    const recovery = result[STORAGE_KEYS.recoveryState];
+    if (!recovery || typeof recovery !== "object") {
+      return null;
+    }
+    return recovery;
+  };
+
+  const clearRecoveryState = async () => {
+    await storageRemove([STORAGE_KEYS.recoveryState]);
   };
 
   const renderLogs = () => {
@@ -586,6 +631,21 @@
     return Math.min(parsed, 999999999);
   };
 
+  const createRecoveryState = ({
+    runMode,
+    remainingCount = 0,
+    targetTodayVolume = 0,
+    attempt = 1,
+    reason = "unknown_error",
+  }) => ({
+    runMode: normalizeRunMode(runMode),
+    remainingCount: clampLoopCount(remainingCount || 1),
+    targetTodayVolume: normalizeTargetTodayVolume(targetTodayVolume),
+    attempt: Math.max(1, Number(attempt) || 1),
+    reason,
+    savedAt: Date.now(),
+  });
+
   const setEnabled = (value) => {
     if (!chrome || !chrome.storage || !chrome.storage.local) {
       return;
@@ -633,6 +693,20 @@
 
     addLog("未检测到USDT、USDC或BNB48，无法选择来源代币");
     return null;
+  };
+
+  const resolveFinalUsdtSettlementFlow = (rows) => {
+    const candidates = [FLOW_USDC_TO_USDT, FLOW_BNB48_TO_USDT]
+      .map((flow) => {
+        const row = findBestPositiveRowByNames(rows, flow.sourceNames);
+        if (!row || row.amountValue <= 0) {
+          return null;
+        }
+        return { flow, row };
+      })
+      .filter(Boolean)
+      .sort((a, b) => b.row.amountValue - a.row.amountValue);
+    return candidates.length ? candidates[0].flow : null;
   };
 
   const renderPanel = ({
@@ -1914,6 +1988,21 @@
     return true;
   };
 
+  const dismissOverlay = async () => {
+    const overlay = findOverlayRoot();
+    if (!overlay) {
+      return true;
+    }
+    document.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true })
+    );
+    document.dispatchEvent(
+      new KeyboardEvent("keyup", { key: "Escape", bubbles: true })
+    );
+    await sleep(200);
+    return !findOverlayRoot();
+  };
+
   const stepOneSelectToken = async (flowOverride) => {
     addLog("步骤1：等待来源代币选择按钮出现");
     const buttons = await waitFor(() => findSelectionButtons(1));
@@ -2134,7 +2223,7 @@
     return true;
   };
 
-  const runSingleSwap = async (flowOverride) => {
+  const runSingleSwap = async (flowOverride, options = {}) => {
     const { flow, reason } = await stepOneSelectToken(flowOverride);
     if (!flow) {
       return { status: reason === "no_source" ? "no_source" : "failed" };
@@ -2159,7 +2248,9 @@
     if (!ready) {
       return { status: "failed" };
     }
-    await incrementCount();
+    if (!options.skipCount) {
+      await incrementCount();
+    }
     return {
       status: "ok",
       flow,
@@ -2190,6 +2281,73 @@
     clickEl(refreshButton);
     addLog("已点击Refresh");
     await sleep(WAIT_AFTER_BUTTON_MS);
+    return true;
+  };
+
+  const refreshPage = async () => {
+    await sleep(120);
+    window.location.reload();
+    await new Promise(() => {});
+  };
+
+  const persistRecoveryBeforeRefresh = async ({
+    runMode,
+    remainingCount,
+    targetTodayVolume,
+    attempt,
+    reason,
+  }) => {
+    const recoveryState = createRecoveryState({
+      runMode,
+      remainingCount,
+      targetTodayVolume,
+      attempt,
+      reason,
+    });
+    await storageSet({
+      [STORAGE_KEYS.runMode]: recoveryState.runMode,
+      [STORAGE_KEYS.loopCount]:
+        recoveryState.runMode === RUN_MODE_COUNT
+          ? recoveryState.remainingCount
+          : 1,
+      [STORAGE_KEYS.targetTodayVolume]: recoveryState.targetTodayVolume,
+      [STORAGE_KEYS.enabled]: false,
+      [STORAGE_KEYS.recoveryState]: recoveryState,
+    });
+    return recoveryState;
+  };
+
+  const recoverFromUnknownError = async ({
+    runMode,
+    total,
+    completed,
+    targetTodayVolume,
+  }) => {
+    const previousRecovery = await readRecoveryState();
+    const nextAttempt = (previousRecovery?.attempt || 0) + 1;
+    if (nextAttempt > UNKNOWN_ERROR_REFRESH_MAX_ATTEMPTS) {
+      await clearRecoveryState();
+      addLog("未知错误连续出现，已超过刷新恢复上限，停止执行");
+      return false;
+    }
+
+    const remainingCount = Math.max(1, total - completed);
+    addLog(
+      runMode === RUN_MODE_COUNT
+        ? `遇到未知错误，刷新前记录恢复状态：还剩 ${remainingCount} 次`
+        : `遇到未知错误，刷新前记录恢复状态：目标 ${formatUsdDisplay(
+            targetTodayVolume
+          )}`
+    );
+    await persistRecoveryBeforeRefresh({
+      runMode,
+      remainingCount,
+      targetTodayVolume,
+      attempt: nextAttempt,
+      reason: "unknown_error",
+    });
+    addLog(`准备刷新页面，第 ${nextAttempt}/${UNKNOWN_ERROR_REFRESH_MAX_ATTEMPTS} 次恢复尝试`);
+    await refreshPage();
     return true;
   };
 
@@ -2225,12 +2383,71 @@
     return { reached: false, currentTodayVolume: current };
   };
 
-  const runSwapLoop = async () => {
+  const ensureOnlyUsdtAfterCompletion = async () => {
+    addLog("全部完成，等待5秒后检查是否需要换回USDT");
+    await sleep(POST_RUN_SETTLE_WAIT_MS);
+
+    const sourceButtons = await waitFor(() => findSelectionButtons(1), 6000);
+    if (!sourceButtons) {
+      addLog("收尾检查失败：未找到来源代币选择按钮");
+      return false;
+    }
+
+    clickEl(sourceButtons[0]);
+    addLog("打开来源代币列表进行收尾检查");
+    await sleep(WAIT_AFTER_BUTTON_MS);
+
+    const rows = await waitFor(findSourceTokenRows, 6000);
+    if (!rows) {
+      addLog("收尾检查失败：未找到来源代币列表");
+      return false;
+    }
+
+    const positiveRows = rows.filter((row) => row.amountValue > 0);
+    if (!positiveRows.length) {
+      addLog("收尾检查：未检测到可用来源代币");
+      await dismissOverlay();
+      return true;
+    }
+
+    const onlyUsdt = positiveRows.every((row) =>
+      matchesAny(row.name, USDT_SOURCE_NAMES)
+    );
+    if (onlyUsdt) {
+      addLog("收尾检查通过，仅剩USDT");
+      const usdtRow = findBestPositiveRowByNames(rows, USDT_SOURCE_NAMES);
+      if (usdtRow) {
+        clickEl(usdtRow.element);
+        await sleep(150);
+      } else {
+        await dismissOverlay();
+      }
+      return true;
+    }
+
+    const settlementFlow = resolveFinalUsdtSettlementFlow(rows);
+    await dismissOverlay();
+    if (!settlementFlow) {
+      addLog("收尾检查发现非USDT余额，但未匹配到可执行的换回USDT流程");
+      return false;
+    }
+
+    addLog(`收尾检查发现需要换回USDT，执行 ${settlementFlow.label}`);
+    const result = await runSingleSwap(settlementFlow, { skipCount: true });
+    if (result.status !== "ok") {
+      addLog("收尾换回USDT失败");
+      return false;
+    }
+    addLog("收尾换回USDT完成");
+    return true;
+  };
+
+  const runSwapLoop = async (overrideSettings = null) => {
     if (running) {
       addLog("当前正在执行，忽略重复开始");
       return;
     }
-    const settings = await getSettings();
+    const settings = overrideSettings || (await getSettings());
     const runMode = normalizeRunMode(settings.runMode);
     const total = clampLoopCount(settings.loopCount);
     const targetTodayVolume = normalizeTargetTodayVolume(
@@ -2249,6 +2466,7 @@
 
     running = true;
     stopRequested = false;
+    let endReason = "completed";
     try {
       let baseTodayVolume = 0;
       let localAccumulatedVolume = 0;
@@ -2260,6 +2478,7 @@
         );
         baseTodayVolume = targetCheck.currentTodayVolume || 0;
         if (targetCheck.reached) {
+          endReason = "target_reached";
           return;
         }
       } else {
@@ -2268,6 +2487,7 @@
       let completed = 0;
       while (runMode === RUN_MODE_TARGET || completed < total) {
         if (stopRequested) {
+          endReason = "stopped";
           addLog("已停止循环");
           break;
         }
@@ -2282,7 +2502,19 @@
           continue;
         }
         if (result.status !== "ok") {
-          addLog("本次失败，停止循环");
+          endReason = "failed";
+          addLog("本次出现未知错误，准备刷新页面恢复");
+          const reloading = await recoverFromUnknownError({
+            runMode,
+            total,
+            completed,
+            targetTodayVolume,
+          });
+          if (reloading) {
+            endReason = "reloading";
+            return;
+          }
+          addLog("未知错误恢复失败，停止循环");
           break;
         }
         completed += 1;
@@ -2297,6 +2529,7 @@
             baseTodayVolume = targetCheck.currentTodayVolume || baseTodayVolume;
             localAccumulatedVolume = 0;
             if (targetCheck.reached) {
+              endReason = "target_reached";
               break;
             }
             if (
@@ -2325,6 +2558,7 @@
             baseTodayVolume = targetCheck.currentTodayVolume || baseTodayVolume;
             localAccumulatedVolume = 0;
             if (targetCheck.reached) {
+              endReason = "target_reached";
               break;
             }
           }
@@ -2336,13 +2570,54 @@
           await waitBetweenCycles();
         }
       }
+      if (
+        (endReason === "completed" || endReason === "target_reached") &&
+        (runMode === RUN_MODE_TARGET || completed >= total)
+      ) {
+        await ensureOnlyUsdtAfterCompletion();
+      }
+      await clearRecoveryState();
     } finally {
       running = false;
       setEnabled(false);
-      if (!stopRequested) {
+      if (!stopRequested && endReason !== "reloading") {
         addLog("循环结束，已关闭");
       }
     }
+  };
+
+  const resumeFromRecoveryIfNeeded = async () => {
+    const recovery = await readRecoveryState();
+    if (!recovery) {
+      return false;
+    }
+    await clearRecoveryState();
+    const resumedSettings =
+      recovery.runMode === RUN_MODE_COUNT
+        ? {
+            enabled: true,
+            loopCount: clampLoopCount(recovery.remainingCount),
+            runMode: RUN_MODE_COUNT,
+            targetTodayVolume: 0,
+          }
+        : {
+            enabled: true,
+            loopCount: 1,
+            runMode: RUN_MODE_TARGET,
+            targetTodayVolume: normalizeTargetTodayVolume(
+              recovery.targetTodayVolume
+            ),
+          };
+    renderPanel(resumedSettings);
+    addLog(
+      recovery.runMode === RUN_MODE_COUNT
+        ? `检测到异常恢复，继续执行，剩余 ${resumedSettings.loopCount} 次`
+        : `检测到异常恢复，继续执行目标模式，目标 ${formatUsdDisplay(
+            resumedSettings.targetTodayVolume
+          )}`
+    );
+    runSwapLoop(resumedSettings);
+    return true;
   };
 
   const runIfEnabled = async () => {
@@ -2393,9 +2668,13 @@
 
   const init = () => {
     resetEnabledOnLoad();
-    waitFor(() => document.body).then(() => {
+    waitFor(() => document.body).then(async () => {
       initPanel();
       startPanelObserver();
+      const resumed = await resumeFromRecoveryIfNeeded();
+      if (resumed) {
+        return;
+      }
       runIfEnabled();
     });
   };
